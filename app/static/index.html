@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MagicerRAG · 你的个人 AI 知识助手</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236d62f5' stroke-width='2'><path d='M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3z'/></svg>">
+</head>
+<body>
+
+  <!-- ======== 认证视图 ======== -->
+  <section id="auth-view" class="auth-view hidden">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <span class="auth-logo"><i data-lucide="sparkles"></i></span>
+        <h1 class="auth-title">MagicerRAG</h1>
+        <p class="auth-sub">你的个人 AI 知识助手</p>
+      </div>
+
+      <div class="auth-tabs">
+        <button class="auth-tab active" data-tab="login">登录</button>
+        <button class="auth-tab" data-tab="register">注册</button>
+      </div>
+
+      <form id="login-form" class="auth-form">
+        <label>用户名
+          <input type="text" name="username" placeholder="请输入用户名" autocomplete="username" required>
+        </label>
+        <label>密码
+          <span class="pw-wrap">
+            <input id="login-password" type="password" name="password" placeholder="请输入密码" autocomplete="current-password" required>
+            <button type="button" class="pw-toggle" title="显示密码" aria-label="显示密码"><i data-lucide="eye"></i></button>
+          </span>
+        </label>
+        <button class="btn btn-primary" type="submit">登录</button>
+      </form>
+
+      <form id="register-form" class="auth-form hidden">
+        <label>用户名
+          <input type="text" name="username" placeholder="2-32 位字符" autocomplete="username" required>
+        </label>
+        <label>密码
+          <span class="pw-wrap">
+            <input id="register-password" type="password" name="password" placeholder="至少 6 位" autocomplete="new-password" required>
+            <button type="button" class="pw-toggle" title="显示密码" aria-label="显示密码"><i data-lucide="eye"></i></button>
+          </span>
+        </label>
+        <label>邀请码<span id="invite-hint" class="invite-hint"></span>
+          <input type="text" name="invite" placeholder="团队成员注册需填写邀请码">
+        </label>
+        <button class="btn btn-primary" type="submit">创建账号</button>
+      </form>
+
+      <p id="auth-error" class="auth-error"></p>
+    </div>
+  </section>
+
+  <!-- ======== 工作台视图 ======== -->
+  <div id="app-view" class="app-view hidden">
+    <!-- 侧边栏 -->
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <span class="sidebar-logo"><i data-lucide="sparkles"></i></span>
+        <span class="sidebar-name">MagicerRAG</span>
+      </div>
+
+      <button id="btn-new-session" class="btn btn-new-session"><i data-lucide="plus"></i> 新建会话</button>
+
+      <div class="session-search-wrap">
+        <i data-lucide="search" class="session-search-ico"></i>
+        <input id="session-search" class="session-search" type="text" placeholder="搜索会话…">
+      </div>
+
+      <nav id="session-list" class="session-list"><!-- 动态渲染 --></nav>
+
+      <div class="sidebar-foot">
+        <button id="btn-kb" class="sidebar-item" title="我的知识"><i data-lucide="book-open"></i> 我的知识</button>
+        <button id="btn-admin" class="sidebar-item hidden" title="用户管理"><i data-lucide="shield"></i> 管理</button>
+        <div class="sidebar-user">
+          <span id="user-ava" class="user-ava"></span>
+          <span class="user-meta"><span id="user-name" class="user-name"></span><span id="admin-badge" class="admin-badge hidden">管理员</span></span>
+          <button id="btn-theme" class="icon-btn" title="切换主题"><i data-lucide="moon"></i></button>
+          <button id="btn-logout" class="icon-btn" title="退出登录"><i data-lucide="log-out"></i></button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 主区域 -->
+    <main class="main">
+      <header class="main-head">
+        <div class="main-head-left"><h2 id="session-title" class="session-title">新会话</h2><span id="kb-indicator" class="kb-indicator"></span></div>
+        <div class="main-head-right">
+          <button id="btn-export-session" class="icon-btn hidden" title="导出当前会话为 Markdown"><i data-lucide="download"></i></button>
+          <button id="btn-share-session" class="icon-btn hidden" title="生成只读分享链接"><i data-lucide="link"></i></button>
+          <button id="btn-collapse" class="icon-btn panel-collapse" title="收起/展开侧栏"><i data-lucide="panel-left-open"></i></button>
+        </div>
+      </header>
+
+      <div id="message-list" class="message-list">
+        <div class="empty-state">
+          <div class="empty-logo"><i data-lucide="sparkles"></i></div>
+          <p class="empty-title">你好 👋 今天想让 MagicerRAG 帮你做什么？</p>
+          <p class="empty-sub">上传你的资料，让 AI 帮你记住、理解、整理和使用</p>
+          <div class="home-actions">
+            <button class="home-action" data-act="upload"><span class="ha-ico"><i data-lucide="file-up"></i></span><span>上传资料</span></button>
+            <button class="home-action" data-act="ask"><span class="ha-ico"><i data-lucide="messages-square"></i></span><span>问我的资料</span></button>
+            <button class="home-action" data-act="summarize"><span class="ha-ico"><i data-lucide="file-text"></i></span><span>总结文档</span></button>
+            <button class="home-action" data-act="search"><span class="ha-ico"><i data-lucide="search"></i></span><span>搜索资料</span></button>
+          </div>
+          <div class="home-recent" id="home-recent"></div>
+        </div>
+      </div>
+
+      <footer class="composer">
+        <div class="composer-ds">
+          <div class="ds-tag-new" id="ds-tag-new">
+            <span class="ds-tag-ico"><i data-lucide="database"></i></span>
+            <select id="ds-select" class="ds-select" title="新会话可选知识库；续聊固定在该知识库"></select>
+          </div>
+          <div class="ds-tag-fixed hidden" id="ds-tag-fixed" title="此会话固定在该知识库中检索，不可更改">
+            <i data-lucide="lock"></i><span id="ds-fixed-label">全部知识库</span>
+          </div>
+        </div>
+        <div class="composer-box">
+          <button id="btn-attach" class="icon-btn attach-btn" title="添加资料"><i data-lucide="paperclip"></i></button>
+          <input id="home-file-input" type="file" multiple accept=".md,.txt,.html,.doc,.docx,.pdf,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.bmp,.webp" class="hidden">
+          <textarea id="input" class="input" rows="1" placeholder="输入你的问题，回车发送（Shift+回车换行）"></textarea>
+          <button id="btn-send" class="btn-send" title="发送" disabled><i data-lucide="send"></i></button>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <!-- ======== 知识库页面（独立全屏页，可返回主页面） ======== -->
+  <div id="kb-page" class="page-view hidden">
+    <div class="kb-shell">
+      <!-- 左侧：知识库列表 + 存储用量 -->
+      <aside class="kb-side">
+        <div class="kb-side-head">
+          <button id="btn-back-kb" class="icon-btn" title="返回问答"><i data-lucide="arrow-left"></i></button>
+          <span class="kb-side-brand"><span class="kb-side-logo"><i data-lucide="book-open"></i></span><span>我的知识</span></span>
+        </div>
+        <button id="btn-new-team" class="btn btn-primary kb-create"><i data-lucide="users"></i> 新建团队库</button>
+        <div class="kb-side-sec"><i data-lucide="folder"></i> 我的知识</div>
+        <ul id="ds-list" class="ds-list"><!-- 数据集列表 --></ul>
+        <div class="kb-side-foot">
+          <div class="kb-meter">
+            <div class="kb-meter-row"><span id="kb-meter-label">0 个文件</span><span id="kb-meter-sub" class="kb-meter-sub">0 已索引</span></div>
+            <div class="kb-meter-bar"><i id="kb-meter-fill"></i></div>
+          </div>
+          <div class="kb-user">
+            <span class="kb-ava"><i data-lucide="user"></i></span>
+            <span class="kb-user-name" id="kb-user-name">个人</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- 右侧：快速访问 + 最近文件 + 团队成员 -->
+      <section class="kb-main">
+        <div id="ds-empty" class="ds-empty">
+          <div class="empty-icon"><i data-lucide="library-big"></i></div>
+          <p class="empty-title">选择一个知识库</p>
+          <p class="empty-sub">左侧仅展示你自己创建或加入的知识库；上方可新建团队库邀请成员协作</p>
+        </div>
+
+        <div id="ds-content" class="ds-content hidden">
+          <div class="kb-toolbar">
+            <div class="kb-title-wrap">
+              <h4 id="ds-name" class="kb-title"></h4>
+              <p id="ds-meta" class="kb-meta"></p>
+            </div>
+            <div class="kb-search">
+              <i data-lucide="search"></i>
+              <input id="kb-file-search" class="kb-search-input" placeholder="搜索文件…">
+            </div>
+            <div id="ds-content-actions" class="kb-toolbar-actions">
+              <label id="dropzone" class="btn btn-outline" title="点击上传文件，支持多选与文件夹">
+                <input id="file-input" type="file" multiple accept=".md,.txt,.html,.doc,.docx,.pdf,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.bmp,.webp">
+                <i data-lucide="upload"></i> 上传文档
+              </label>
+              <input id="folder-input" type="file" webkitdirectory class="hidden">
+              <button id="btn-upload-folder" class="btn btn-outline" title="选择整个文件夹上传（含子目录）"><i data-lucide="folder-open"></i> 上传文件夹</button>
+              <button id="btn-rebuild" class="btn btn-primary"><i data-lucide="refresh-cw"></i> 重建索引</button>
+              <button id="btn-chunk-config" class="btn btn-outline" title="内容分块模板与参数"><i data-lucide="sliders-horizontal"></i> 分块设置</button>
+              <button id="btn-chunk-preview" class="btn btn-ghost" title="查看当前文档将如何分块"><i data-lucide="scan-line"></i> 分块预览</button>
+              <span id="upload-progress" class="upload-progress hidden" title="上传进度"><i id="upload-progress-fill"></i><span id="upload-progress-text">0%</span></span>
+              <span id="rebuild-progress" class="rebuild-progress" title="重建进度"></span>
+            </div>
+          </div>
+
+          <div class="kb-section">
+            <div class="kb-sec-head">
+              <span class="kb-sec-title">快速访问</span>
+              <button class="kb-sec-toggle" data-target="kb-quick" title="收起/展开"><i data-lucide="chevron-up"></i></button>
+            </div>
+            <div id="kb-quick" class="kb-quick"></div>
+          </div>
+
+          <div class="kb-section">
+            <div class="kb-sec-head">
+              <span class="kb-sec-title">最近文件</span>
+              <span class="rb-col"><span class="kb-count" id="kb-count">0 个文件</span><button id="btn-batch-del" class="btn btn-danger btn-xs hidden" title="删除选中的文件">删除选中</button></span>
+            </div>
+            <div class="kb-table">
+              <div class="kb-tr kb-tr-head"><span class="kb-col-select"><input type="checkbox" id="kb-check-all" title="全选本页文件"></span><span>名称</span><span>最后编辑</span><span>大小</span><span>状态</span><span class="kb-col-actions">操作</span></div>
+              <ul id="kb-list" class="kb-list"><!-- 文件列表 --></ul>
+            </div>
+          </div>
+
+          <div id="ds-members" class="kb-section kb-members hidden">
+            <div class="kb-sec-head"><span class="kb-sec-title"><i data-lucide="users"></i> 团队成员</span></div>
+            <div id="member-list" class="member-list"></div>
+            <div id="member-add" class="member-add hidden">
+              <input id="member-name" class="member-input" placeholder="输入对方用户名按回车">
+              <select id="member-role" class="member-role">
+                <option value="member">成员</option>
+                <option value="manager">管理者</option>
+                <option value="owner">所有者</option>
+              </select>
+              <button id="btn-add-member" class="btn btn-outline btn-sm">邀请</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ======== 管理中心（概览 / 人员 / 模型 / 资源 / 邀请码） ======== -->
+  <div id="admin-page" class="page-view hidden">
+    <div class="adm-shell">
+      <aside class="adm-side">
+        <div class="adm-side-head">
+          <button id="btn-back-admin" class="icon-btn" title="返回问答"><i data-lucide="arrow-left"></i></button>
+          <span class="adm-brand"><span class="adm-logo"><i data-lucide="shield"></i></span><span>管理中心</span></span>
+        </div>
+        <nav class="adm-nav">
+          <button class="adm-nav-item active" data-adm="overview"><i data-lucide="layout-dashboard"></i><span>概览</span></button>
+          <button class="adm-nav-item" data-adm="users"><i data-lucide="users"></i><span>人员管理</span></button>
+          <button class="adm-nav-item" data-adm="usage"><i data-lucide="activity"></i><span>使用情况</span></button>
+          <button class="adm-nav-item" data-adm="models"><i data-lucide="cpu"></i><span>模型管理</span></button>
+          <button class="adm-nav-item" data-adm="quota"><i data-lucide="gauge"></i><span>资源分配</span></button>
+          <button class="adm-nav-item" data-adm="invite"><i data-lucide="key-round"></i><span>邀请码</span></button>
+        </nav>
+      </aside>
+
+      <main class="adm-main">
+        <section class="adm-page" data-page="overview">
+          <div class="adm-head"><h3>系统概览</h3><p>全局资源与运行状态</p></div>
+          <div id="adm-stats" class="adm-stats"></div>
+          <div class="adm-card">
+            <div class="adm-card-title">成员资源占用</div>
+            <div id="adm-usage-list" class="adm-usage"></div>
+          </div>
+        </section>
+
+        <section class="adm-page hidden" data-page="users">
+          <div class="adm-head"><h3>人员管理</h3><p>启停 / 删除账号</p></div>
+          <div class="adm-card">
+            <div id="user-list" class="user-list"></div>
+          </div>
+        </section>
+
+        <section class="adm-page hidden" data-page="usage">
+          <div class="adm-head"><h3>使用情况</h3><p>近 14 天问答趋势与逐用户用量（用于后续调整优化）</p></div>
+          <div class="adm-card">
+            <div class="adm-card-title">每日问答趋势</div>
+            <div id="adm-usage-chart" class="usage-chart"></div>
+          </div>
+          <div class="adm-card">
+            <div class="adm-card-title">用户使用明细</div>
+            <div id="adm-usage-table" class="usage-table"></div>
+          </div>
+        </section>
+
+        <section class="adm-page hidden" data-page="models">
+          <div class="adm-head"><h3>模型管理</h3><p>运行时切换 LLM 与检索参数</p></div>
+          <div class="adm-card">
+            <div id="model-form"></div>
+          </div>
+        </section>
+
+        <section class="adm-page hidden" data-page="quota">
+          <div class="adm-head"><h3>资源分配</h3><p>逐用户会话 / 知识库容量配额</p></div>
+          <div class="adm-card">
+            <div id="quota-list" class="user-list"></div>
+          </div>
+        </section>
+
+        <section class="adm-page hidden" data-page="invite">
+          <div class="adm-head"><h3>邀请码</h3><p>控制团队注册入口</p></div>
+          <div class="adm-card">
+            <div class="adm-card-title">注册邀请码</div>
+            <div class="admin-row">
+              <input id="invite-code" class="member-input" placeholder="当前邀请码">
+              <button id="btn-save-invite" class="btn btn-primary btn-sm">保存</button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- ======== 新建团队库弹窗 ======== -->
+  <div id="team-modal" class="kb-panel hidden">
+    <div class="kb-overlay"></div>
+    <div class="kb-card team-modal-card">
+      <div class="kb-head">
+        <h3><i data-lucide="user-plus"></i> 新建团队知识库</h3>
+        <button id="btn-close-team" class="icon-btn"><i data-lucide="x"></i></button>
+      </div>
+      <input id="team-name" class="member-input" placeholder="团队库名称">
+      <div class="team-modal-actions">
+        <button id="btn-cancel-team" class="btn btn-outline">取消</button>
+        <button id="btn-confirm-team" class="btn btn-primary">创建</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <!-- ======== 文件预览弹窗 ======== -->
+  <div id="kb-preview-modal" class="kb-panel hidden">
+  <div class="kb-overlay" data-close="true"></div>
+  <div class="kb-card preview-card">
+    <div class="kb-head"><h3><i data-lucide="scan-line"></i> 分块预览</h3></div>
+    <div class="kb-modal-body"><div id="kb-preview-list" class="kb-preview-list"></div></div>
+    <div class="kb-team-actions">
+      <button class="btn btn-ghost" data-close="true">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div id="kb-config-modal" class="kb-panel hidden">
+  <div class="kb-overlay" data-close="true"></div>
+  <div class="kb-card preview-card">
+    <div class="kb-head"><h3><i data-lucide="sliders-horizontal"></i> 内容分块设置</h3></div>
+    <div class="kb-modal-body">
+      <p class="kb-config-tip">分块方式决定文档被切成怎样的检索单元；保存后需<b>重建索引</b>方可生效。</p>
+      <label class="kb-config-field">分块模板
+        <select id="kv-split-mode">
+          <option value="markdown">标题感知（默认）——按标题分节，超长递归</option>
+          <option value="recursive">递归切分——忽略标题边界按语意切分</option>
+          <option value="whole">大段不拆——按节整体成块（适合问答集）</option>
+        </select>
+      </label>
+      <div class="kb-config-row">
+        <label class="kb-config-field">区块长度（字符）
+          <input id="kv-chunk-size" type="number" min="64" max="2000" step="8" placeholder="默认 500">
+        </label>
+        <label class="kb-config-field">重叠（字符）
+          <input id="kv-overlap" type="number" min="0" max="400" step="4" placeholder="默认 50">
+        </label>
+      </div>
+      <p class="kb-config-note">留空 = 使用默认值（模板「标题感知」，长度 500，重叠 50）。</p>
+    </div>
+    <div class="kb-team-actions">
+      <button class="btn btn-ghost" data-close="true">取消</button>
+      <button id="btn-save-split" class="btn btn-primary">保存并重建</button>
+    </div>
+  </div>
+</div>
+
+<div id="preview-modal" class="kb-panel hidden">
+    <div class="kb-overlay"></div>
+    <div class="kb-card team-modal-card preview-card">
+      <div class="kb-head">
+        <h3><i data-lucide="file-text"></i> <span id="preview-title">文件预览</span></h3>
+        <div class="preview-tools">
+          <div class="preview-tabs" id="preview-tabs">
+            <button class="preview-tab active" data-view="render"><i data-lucide="scan-line"></i>渲染</button>
+            <button class="preview-tab" data-view="raw"><i data-lucide="code-2"></i>原文</button>
+          </div>
+        </div>
+        <button id="btn-close-preview" class="icon-btn"><i data-lucide="x"></i></button>
+      </div>
+      <div id="preview-stats" class="preview-stats"></div>
+      <div id="preview-render" class="preview-render"></div>
+      <pre id="preview-body" class="preview-body" hidden></pre>
+    </div>
+  </div>
+
+  <!-- 图标库：Lucide（CDN 免构建；钉定版本） -->
+  <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.js"></script>
+  <!-- 富文本渲染依赖（本地化）：marked 解析 Markdown，DOMPurify 净化 HTML，highlight 代码着色 -->
+  <script src="/static/vendor/marked.min.js"></script>
+  <script src="/static/vendor/purify.min.js"></script>
+  <script src="/static/vendor/highlight.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

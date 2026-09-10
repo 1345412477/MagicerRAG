@@ -1,0 +1,6 @@
+# 开发 / 测试 / CI 依赖
+pytest>=8.0.0
+httpx>=0.27.0
+
+# 可选：本地重排序（Cross-Encoder，如 bge-reranker）。缺省时检索自动回退纯向量。
+# sentence-transformers>=3.0.0

@@ -1,0 +1,20 @@
+# 环境配置（含密钥，勿提交）
+.env
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# 本地知识与运行时数据（生产私有内容，不入库）
+storage/
+docs/
+data/
+scripts/
+
+# 系统 / IDE
+.idea/
+.vscode/
+.DS_Store

@@ -1,0 +1,13 @@
+.env
+.git
+.gitignore
+data
+storage
+DEVLOG.md
+*.pyc
+__pycache__
+.venv
+venv
+scripts
+.nosync
+Test.html
