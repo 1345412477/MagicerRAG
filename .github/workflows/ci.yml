@@ -26,4 +26,6 @@ jobs:
           # 测试使用隔离的临时存储（见 tests/conftest.py），此处无需真实密钥
           LLM_API_KEY: sk-test
           EMBEDDING_API_KEY: sk-test
+          # 测试用例中按 admin 用户名注册/登录，需要与本地开发一致的提权配置
+          ADMIN_USERNAME: admin
         run: python -m pytest -q
