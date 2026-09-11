@@ -19,6 +19,10 @@ from config import (
 from rag.hybrid import BM25, fuse
 from rag.rerank import rerank_hits
 
+import logging
+
+_logger = logging.getLogger("magicerrag.retriever")
+
 
 class _RWLock:
     """简单公平读写锁：读读可并发，写写/写读互斥；写模式可重入（同一线程嵌套再拿）。
@@ -458,6 +462,7 @@ def clear_dataset(dataset_id: int):
             collection = store._collection  # 原生 chromadb Collection
             collection.delete(where={"dataset_id": str(dataset_id)})
             _invalidate_caches()
-    except Exception:
-        # 集合尚不存在或为空属正常，忽略
-        pass
+    except Exception as e:  # noqa: BLE001
+        # 集合尚不存在或为空属正常，忽略；其余删除失败需告警以便排查
+        if "does not exist" not in str(e).lower():
+            _logger.warning("clear_dataset 清理 dataset=%s 失败: %s", dataset_id, e)

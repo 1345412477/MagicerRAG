@@ -58,8 +58,9 @@ def _public_user(user: dict) -> dict:
 @router.post("/register")
 def register(body: RegisterIn, response: Response, request: Request):
     if body.username == ADMIN_USERNAME:
-        # 超管账号：免邀请码
-        pass
+        # 超管账号：免邀请码播种，但仅允许一次；已存在则拒绝同名注册，防止被抢先注册为超管。
+        if db.get_user_by_name(ADMIN_USERNAME):
+            raise HTTPException(status_code=409, detail="超管账号已存在，不可重复注册")
     elif not body.invite_code or body.invite_code != INVITE_CODE:
         raise HTTPException(status_code=403, detail="邀请码不正确")
     if db.get_user_by_name(body.username):

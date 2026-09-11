@@ -35,10 +35,3 @@ class RAGPipeline:
             "hits": hits,
             "answer": answer(build_llm(), question, hits),
         }
-
-    def close(self):
-        """释放 Chroma 连接，防止程序退出时告警。"""
-        try:
-            self.ensure_store()
-        except Exception:
-            pass

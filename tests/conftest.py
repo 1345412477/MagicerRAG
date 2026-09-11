@@ -8,6 +8,7 @@ import config
 import rag.retriever as retriever
 import app.limits as limits
 import app.service.kb_service as kb_service
+import app.websecurity as websecurity
 
 
 @pytest.fixture(autouse=True)
@@ -32,6 +33,8 @@ def _isolated_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(retriever, "VECTOR_DIR", vector_dir)
     retriever._store = None
     retriever._embeddings = None
+    # 清空会话令牌内存缓存，避免单测间令牌残留
+    websecurity._tokens.clear()
 
     # 放宽限流：测试里会密集注册 / 登录，避免误触 429
     monkeypatch.setattr(

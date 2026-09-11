@@ -19,7 +19,7 @@ services:
       INVITE_CODE: ${INVITE_CODE:-magicer-demo}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       TOP_K: ${TOP_K:-4}
-      SCORE_THRESHOLD: ${SCORE_THRESHOLD:-0.5}
+      SCORE_THRESHOLD: ${SCORE_THRESHOLD:-0.3}
     volumes:
       - ./data:/app/data        # SQLite 数据库 + 上传文档（如缺失会按默认路径新建）
       - ./storage:/app/storage  # 向量索引库

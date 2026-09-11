@@ -703,11 +703,18 @@ def add_model_config(display_name, provider, model, base_url, api_key, is_active
 def update_model_config(id_: int, fields: dict):
     if not fields:
         return
-    set_sql = ", ".join(f"{c}=?" for c in fields)
+    # 白名单护栏：只允许更新已声明的列，避免拼接任意字段名形成注入点
+    _MODEL_CONFIG_COLS = {
+        "display_name", "provider", "model", "base_url", "api_key", "is_active",
+    }
+    allowed = {c: fields[c] for c in fields if c in _MODEL_CONFIG_COLS}
+    if not allowed:
+        return
+    set_sql = ", ".join(f"{c}=?" for c in allowed)
     with get_conn() as conn:
         conn.execute(
             f"UPDATE model_configs SET {set_sql}, updated_at=? WHERE id=?",
-            [*fields.values(), utcnow(), id_],
+            [*allowed.values(), utcnow(), id_],
         )
 
 

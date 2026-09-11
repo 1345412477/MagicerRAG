@@ -52,6 +52,14 @@ def test_admin_register_is_admin(client):
     assert client.get("/api/admin/audit", headers=ah).status_code == 200
 
 
+def test_admin_register_duplicate_rejected(client):
+    """超管只能播种一次：首次成功，重复注册同名 admin 应被拒绝，防抢先后门。"""
+    r1 = client.post("/api/auth/register", json={"username": "admin", "password": "secret123"})
+    assert r1.status_code == 200 and r1.json()["user"]["is_admin"] is True
+    r2 = client.post("/api/auth/register", json={"username": "admin", "password": "other123"})
+    assert r2.status_code == 409
+
+
 def test_export_session_only_owner(client, registered_user):
     h = registered_user["headers"]
     sid = client.post("/api/chats/sessions", json={"title": "t"}, headers=h).json()["id"]
@@ -75,6 +83,25 @@ def test_share_create_and_view(client, registered_user, monkeypatch):
     v = client.get(f"/api/chats/shares/{token}")
     assert v.status_code == 200
     assert v.json()["title"] == "shared"
+
+
+def test_share_landing_page_renders(client, registered_user, monkeypatch):
+    """分享落地页 /share/{token} 应渲染只读 HTML，不再返回无效链接。"""
+    h = registered_user["headers"]
+    _mock_ask(monkeypatch)
+    # 通过 ask 建会话并写入 user + assistant 消息
+    r = client.post("/api/chats/ask", json={"question": "你好", "dataset_ids": []}, headers=h)
+    assert r.status_code == 200
+    # 取该用户最新会话并分享
+    sid = client.get("/api/chats/sessions", headers=h).json()[0]["id"]
+    token = client.post(f"/api/chats/sessions/{sid}/share", json={"days": 7}, headers=h).json()["token"]
+    page = client.get(f"/share/{token}")
+    assert page.status_code == 200
+    assert "text/html" in page.headers["content-type"]
+    assert "你好" in page.text          # 用户消息
+    assert "模拟答案" in page.text      # 助手消息
+    # 无效 token -> 404
+    assert client.get("/share/not-a-real-token").status_code == 404
 
 
 def test_rebuild_returns_task(client, registered_user, monkeypatch):

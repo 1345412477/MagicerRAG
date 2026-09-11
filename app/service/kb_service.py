@@ -1,6 +1,7 @@
 """知识库服务：按数据集扫描上传目录并重建向量索引、删除库清理。"""
 from __future__ import annotations
 
+import logging
 import shutil
 from collections import Counter
 from pathlib import Path
@@ -12,6 +13,8 @@ from rag.ingestor import load_and_chunk
 from rag.retriever import clear_dataset, rebuild_dataset
 from rag.summarize import maybe_summary_chunks
 from .. import db, runtime_settings
+
+_logger = logging.getLogger("magicerrag.kb")
 
 
 def dataset_upload_dir(dataset_id: int) -> Path:
@@ -73,8 +76,8 @@ def rebuild_index(
                 chunks.extend(summary_chunks)
                 if progress_cb:
                     progress_cb(92, f"已生成 {len(summary_chunks)} 个摘要分块")
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as e:  # noqa: BLE001
+            _logger.warning("超长文档摘要生成失败，已回退（不阻塞索引）: %s", e)
 
     n = rebuild_dataset(dataset_id, chunks)
     # 记录本次所用 Embedding，供管理台检测「索引模型 vs 当前 Embedding」是否一致

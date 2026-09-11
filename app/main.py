@@ -17,12 +17,13 @@ from config import PORT
 from .deps import CSRF_COOKIE, SESSION_COOKIE
 from .limits import RateLimitMiddleware
 from .routers import admin, auth, chats, kb
+from . import sharepage
 
 logger = logging.getLogger("magicerrag")
 
 STATIC_DIR = Path(__file__).parent / "static"
 
-app = FastAPI(title="MagicerRAG", version="0.1.0")
+app = FastAPI(title="MagicerRAG", version="1.0.0")
 
 # 限流需最先拦截，避免未认证请求消耗后续依赖校验逻辑
 app.add_middleware(RateLimitMiddleware)
@@ -88,6 +89,13 @@ def index():
     html = re.sub("style\\.css(?:\\?v=[^\"\\s]*)?", f"style.css?v={css_v}", html)
     html = re.sub("app\\.js(?:\\?v=[^\"\\s]*)?", f"app.js?v={js_v}", html)
     return HTMLResponse(html)
+
+
+@app.get("/share/{token}")
+def share_page(token: str):
+    """分享落地页：复用 /api/chats/shares 的公开读取逻辑，渲染只读 HTML。"""
+    data = chats.view_share(token)
+    return HTMLResponse(sharepage.render(data["title"], data["messages"]))
 
 
 if __name__ == "__main__":
