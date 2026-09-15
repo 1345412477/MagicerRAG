@@ -45,15 +45,10 @@ MagicerRAG/
 │   ├── summarize.py       # 超长文档分层摘要
 │   ├── generator.py       # 提示词构造 + LLM 生成
 │   └── pipeline.py        # 一键式编排封装
-├── docs/                  # PRD / 部署文档 / 使用手册 / 评测样本
-├── scripts/               # 备份脚本、检索效果评测
-├── tests/                 # pytest 测试（隔离存储夹具）
-├── .github/workflows/     # GitHub Actions CI
 ├── data/                  # 运行时数据（SQLite + 上传文档，不入库）
 ├── storage/vectordb/      # 向量库持久化（自动生成）
 ├── requirements*.txt / Dockerfile / docker-compose.yml
-├── .env.example / .gitignore / .dockerignore
-└── DEVLOG.md              # 开发日志
+└── .env.example / .gitignore / .dockerignore
 ```
 
 ## 网页工作台（推荐）
@@ -115,18 +110,7 @@ python query.py "账号是如何注册的？"
 | `SECRET_KEY` | 模型 API Key 落库加密密钥（生产建议独立固定） |
 | `TESSERACT_CMD` / `TESSDATA_PREFIX` | 图片 OCR（仅在非常规路径时需要） |
 
-## 测试与 CI
-
-```bash
-# 运行测试（tests/conftest.py 使用隔离的临时存储，无需真实密钥）
-pip install -r requirements-dev.txt
-python -m pytest -q
-```
-
-GitHub Actions（`.github/workflows/ci.yml`）在每次 push / PR 时：编译全部 Python、`node --check` 前端语法、运行 `pytest`。
-
 ## 说明
 
 - Chroma 为本地零配置向量库，数据落盘 `storage/vectordb`，换机器需重新建索引。
 - 生产环境请勿把密钥写入仓库（见 `.gitignore`，`.env` 与运行时 `data/`、`storage/` 均不入库）。
-- 详细设计请参考项目内 `DEVLOG.md` 与本地 `docs/` 的 PRD 文档。
