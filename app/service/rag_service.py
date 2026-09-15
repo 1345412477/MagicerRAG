@@ -1,6 +1,7 @@
 """面向网页工作台的服务层：把现有 RAG 管道封装成便于 API 调用的形态，并支持流式生成。"""
 from __future__ import annotations
 
+import json
 from typing import Iterator
 
 from openai import AsyncOpenAI, OpenAI
@@ -21,6 +22,41 @@ def _ahttp(base_url: str, api_key: str) -> AsyncOpenAI:
         client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         _ahttp_clients[cache_key] = client
     return client
+
+
+def _message_text(msg) -> str:
+    """一次对话消息正文：content 优先，空则回退 reasoning_content（兼容推理型模型）。"""
+    t = getattr(msg, "content", None) or ""
+    return t or (getattr(msg, "reasoning_content", None) or "")
+
+
+def _extract_json_array(text: str) -> list | None:
+    """从 LLM 输出中提取 JSON 字符串数组。直接解析优先；推理型（reasoning_content）
+    常把数组嵌在叙述里，则按括号配平截取第一个 `[...]` 再解析。"""
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = t.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    try:
+        data = json.loads(t)
+        return data if isinstance(data, list) else None
+    except Exception:  # noqa: BLE001 走宽松提取
+        pass
+    start = t.find("[")
+    if start == -1:
+        return None
+    depth = 0
+    for i in range(start, len(t)):
+        if t[i] == "[":
+            depth += 1
+        elif t[i] == "]":
+            depth -= 1
+            if depth == 0:
+                try:
+                    cand = json.loads(t[start:i + 1])
+                    return cand if isinstance(cand, list) else None
+                except Exception:  # noqa: BLE001 截取仍非法则放弃
+                    return None
+    return None
 
 # 服务层专用生成提示：在 _SYSTEM 基础上引入「内联编号引用」，供前端渲染为可点击的①上标。
 # 独立定义而非改动 rag/generator._SYSTEM，避免影响 CLI（ingest/query）该共享 prompt 的行为。
@@ -176,9 +212,11 @@ def rewrite_question(question: str, history: list[dict] | None = None) -> str:
         return question
 
 
-async def stream_answer_async(question: str, context: str, history: list[dict] | None = None) -> Iterator[str]:
+async def stream_answer_async(question: str, context: str, history: list[dict] | None = None) -> Iterator[tuple[str, str]]:
     """异步流式生成（SSE 用）：基于 AsyncOpenAI，不在事件循环里阻塞。
 
+    每个产出一组 (reasoning, content)。推理型模型（如 deepseek-flash）分别流式回吐
+    思考链（reasoning_content）与最终正文（content）；普通模型 reasoning 恒为空。
     N7：原同步版 stream_answer 与它逻辑重复，且无调用方；统一只保留一个 async 实现。
     """
     rt = runtime_settings.load()
@@ -198,6 +236,55 @@ async def stream_answer_async(question: str, context: str, history: list[dict] |
     )
     async for chunk in stream:
         if chunk.choices:
-            delta = chunk.choices[0].delta.content
-            if delta:
-                yield delta
+            d = chunk.choices[0].delta
+            reason = getattr(d, "reasoning_content", None) or ""
+            content = d.content or ""
+            if reason or content:
+                yield reason, content
+
+
+# W1：推荐追问的兜底问题（LLM 生成失败/被关时使用，与历史前端硬编码一致）
+_FALLBACK_SUGGESTIONS = [
+    "帮我总结一下这份资料",
+    "我该重点关注哪些内容？",
+    "根据这些资料生成一份学习笔记",
+]
+
+
+async def recommend_questions_async(question: str, answer: str, hits: list[dict]) -> list[str]:
+    """W1：基于用户提问、助手回答与命中资料，生成 3 个可点击的推荐追问。
+
+    单次 LLM 调用；任何失败或非法输出都回退到《FALLBACK_SUGGESTIONS》，绝不影响主回答。
+    """
+    rt = runtime_settings.load()
+    if not rt["api_key"] or not rt["model"]:
+        return list(_FALLBACK_SUGGESTIONS)
+    ctx = "\n".join(
+        f"- {h.get('source', '')}: {(h.get('content') or '')[:150]}"
+        for h in (hits or [])[:5]
+    )
+    sys_p = (
+        "你是知识问答助手。请基于用户的提问、助手已给出的回答和你看到的参考资料，"
+        "生成用户接下来最可能继续追问的 3 个问题。"
+        "只输出一个 JSON 字符串数组（如 [\"q1\",\"q2\",\"q3\"]），不要包含任何解释或其他文字。"
+    )
+    user_p = f"用户提问：{question}\n\n助手回答：{answer[:400]}\n\n参考资料：\n{ctx}"
+    try:
+        client = _ahttp(rt["base_url"], rt["api_key"])
+        resp = await client.chat.completions.create(
+            model=rt["model"],
+            temperature=0.3,
+            max_tokens=512,
+            messages=[
+                {"role": "system", "content": sys_p},
+                {"role": "user", "content": user_p},
+            ],
+        )
+        raw = _message_text(resp.choices[0].message).strip()
+        data = _extract_json_array(raw)
+        if not isinstance(data, list):
+            return list(_FALLBACK_SUGGESTIONS)
+        out = [str(q).strip() for q in data if isinstance(q, str) and q.strip()][:3]
+        return out if out else list(_FALLBACK_SUGGESTIONS)
+    except Exception:  # noqa: BLE001 推荐失败回退兜底，不阻塞主回答
+        return list(_FALLBACK_SUGGESTIONS)

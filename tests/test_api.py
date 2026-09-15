@@ -10,12 +10,15 @@ from app.service import rag_service
 
 def _mock_ask(monkeypatch):
     async def fake_stream(question, context, history=None):
-        yield "模拟答案"
+        yield "", "模拟答案"
 
     monkeypatch.setattr(rag_service, "retrieve_hits", lambda *a, **k: [
         {"content": "区块内容", "score": 0.9, "source": "demo.md"}
     ])
     monkeypatch.setattr(rag_service, "stream_answer_async", fake_stream)
+    async def fake_recommend(q, a, hits):
+        return ["追问一", "追问二", "追问三"]
+    monkeypatch.setattr(rag_service, "recommend_questions_async", fake_recommend)
 
 
 def test_register_requires_correct_invite(client):
@@ -37,6 +40,13 @@ def test_ask_streams_and_history(client, registered_user, monkeypatch):
     assert r.status_code == 200
     assert "event: retrieval" in r.text
     assert "模拟答案" in r.text
+    # W2：SSE 应包含检索/生成阶段事件，且阶段有序
+    assert "event: stage" in r.text
+    assert 'data: {"stage": "retrieve"}' in r.text
+    assert 'data: {"stage": "generate"}' in r.text
+    # W1：回答生成后应推送推荐追问事件
+    assert "event: suggest" in r.text
+    assert "追问一" in r.text
 
 
 def test_admin_audit_requires_admin(client, registered_user):

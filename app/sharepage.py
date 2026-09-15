@@ -26,9 +26,15 @@ def render(title: str, messages: list[dict]) -> str:
                     for h in hits
                 )
                 refs = f'<details class="refs"><summary>参考资料</summary><ul>{items}</ul></details>'
+            thinking = _html.escape(m.get("reasoning") or "")
+            think_html = (
+                f'<details class="think"><summary>思考过程</summary><div class="think-body">{thinking.replace(chr(10), "<br>")}</div></details>'
+                if thinking
+                else ""
+            )
             body.append(
                 f'<div class="msg asst"><div class="role">助手</div>'
-                f'<div class="bubble">{content}{refs}</div></div>'
+                f'<div class="bubble">{think_html}{content}{refs}</div></div>'
             )
         else:
             body.append(

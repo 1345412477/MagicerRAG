@@ -32,6 +32,8 @@ HISTORY_TURNS = int(os.getenv("HISTORY_TURNS", "6"))
 CONTEXT_TOKEN_BUDGET = int(os.getenv("CONTEXT_TOKEN_BUDGET", "4000"))
 # 检索前是否用会话历史改写问题（默认关闭，避免额外模型调用与延迟）
 QUERY_REWRITE = os.getenv("QUERY_REWRITE", "0").lower() in {"1", "true", "yes", "on"}
+# W1：回答后是否生成「推荐追问 + 空会话引导问题」（默认开；失败自动回退硬编码兜底）
+SUGGEST_QUESTIONS = os.getenv("SUGGEST_QUESTIONS", "1").lower() in {"1", "true", "yes", "on"}
 # 是否对召回启用多样性（MMR），lambda 越小越多样
 MMR_ENABLED = os.getenv("MMR_ENABLED", "0").lower() in {"1", "true", "yes", "on"}
 MMR_LAMBDA = float(os.getenv("MMR_LAMBDA", "0.7"))

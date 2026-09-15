@@ -29,6 +29,7 @@ from config import (
     RERANK_CHANNEL,
     RERANK_EXTERNAL_URL,
     SCORE_THRESHOLD,
+    SUGGEST_QUESTIONS,
     TOP_K,
 )
 
@@ -45,6 +46,7 @@ _DEFAULTS: dict[str, str] = {
     "history_turns": str(HISTORY_TURNS),
     "context_token_budget": str(CONTEXT_TOKEN_BUDGET),
     "query_rewrite": "1" if QUERY_REWRITE else "0",
+    "suggest_questions": "1" if SUGGEST_QUESTIONS else "0",
     "mmr_enabled": "1" if MMR_ENABLED else "0",
     "mmr_lambda": str(MMR_LAMBDA),
     "rerank_enabled": "1" if RERANK_ENABLED else "0",
@@ -71,6 +73,7 @@ _EDITABLE = {
     "history_turns",
     "context_token_budget",
     "query_rewrite",
+    "suggest_questions",
     "mmr_enabled",
     "mmr_lambda",
     "rerank_enabled",
@@ -113,6 +116,7 @@ def load() -> dict:
         "history_turns": int(m["history_turns"]),
         "context_token_budget": int(m["context_token_budget"]),
         "query_rewrite": m["query_rewrite"] == "1",
+        "suggest_questions": m["suggest_questions"] == "1",
         "mmr_enabled": m["mmr_enabled"] == "1",
         "mmr_lambda": float(m["mmr_lambda"]),
         "rerank_enabled": m["rerank_enabled"] == "1",

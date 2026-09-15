@@ -162,6 +162,10 @@ def _migrate(conn: sqlite3.Connection):
     scol = {r["name"] for r in conn.execute("PRAGMA table_info(sessions)")}
     if "dataset_id" not in scol:
         conn.execute("ALTER TABLE sessions ADD COLUMN dataset_id INTEGER")
+    # 阶段20：会话消息补充推理链（思考过程）。旧消息迁移后为空。
+    mcol = {r["name"] for r in conn.execute("PRAGMA table_info(messages)")}
+    if "reasoning" not in mcol:
+        conn.execute("ALTER TABLE messages ADD COLUMN reasoning TEXT")
 
 
 @contextmanager
@@ -446,11 +450,18 @@ def delete_session(session_id: int, user_id: int) -> int:
 
 
 # ---------- 消息 ----------
-def add_message(session_id: int, role: str, content: str, hits: list | None = None) -> int:
+def add_message(session_id: int, role: str, content: str, hits: list | None = None, reasoning: str | None = None) -> int:
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO messages (session_id, role, content, hits, created_at) VALUES (?,?,?,?,?)",
-            (session_id, role, content, json.dumps(hits, ensure_ascii=False) if hits else None, utcnow()),
+            "INSERT INTO messages (session_id, role, content, hits, reasoning, created_at) VALUES (?,?,?,?,?,?)",
+            (
+                session_id,
+                role,
+                content,
+                json.dumps(hits, ensure_ascii=False) if hits else None,
+                reasoning,
+                utcnow(),
+            ),
         )
         return cur.lastrowid
 
@@ -468,6 +479,7 @@ def list_messages(session_id: int) -> list[dict]:
                 "role": r["role"],
                 "content": r["content"],
                 "hits": json.loads(r["hits"]) if r["hits"] else None,
+                "reasoning": r["reasoning"] if "reasoning" in r.keys() else None,
             }
         )
     return out
@@ -488,9 +500,14 @@ def list_recent_messages(session_id: int, limit: int = 20) -> list[dict]:
     ]
 
 
-def update_message_content(message_id: int, content: str):
+def update_message_content(message_id: int, content: str, reasoning: str | None = None):
     with get_conn() as conn:
-        conn.execute("UPDATE messages SET content=? WHERE id=?", (content, message_id))
+        if reasoning is None:
+            conn.execute("UPDATE messages SET content=? WHERE id=?", (content, message_id))
+        else:
+            conn.execute(
+                "UPDATE messages SET content=?, reasoning=? WHERE id=?", (content, reasoning, message_id)
+            )
 
 
 # ---------- 知识库文件 ----------

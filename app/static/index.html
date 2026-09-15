@@ -97,6 +97,13 @@
         </div>
       </header>
 
+      <!-- W2：RAG 分阶段进度条（检索中 → 生成中），流式开始显示、done 后隐藏 -->
+      <div id="pipeline-bar" class="pipeline-bar hidden">
+        <span class="pipe-step" data-st="retrieve"><span class="pipe-dot"></span>检索中</span>
+        <span class="pipe-sep"></span>
+        <span class="pipe-step" data-st="generate"><span class="pipe-dot"></span>生成中</span>
+      </div>
+
       <div id="message-list" class="message-list">
         <div class="empty-state">
           <div class="empty-logo"><i data-lucide="sparkles"></i></div>
@@ -379,6 +386,16 @@
       <pre id="preview-body" class="preview-body" hidden></pre>
     </div>
   </div>
+
+  <!-- W3：参考资料全局右边抽屉（message-list 内点击「参考资料 N」或内联 [n] 打开） -->
+  <div id="ref-overlay" class="ref-overlay hidden"></div>
+  <aside id="ref-drawer" class="ref-drawer" aria-label="参考资料">
+    <div class="ref-head">
+      <span id="ref-title" class="ref-title">参考资料</span>
+      <button type="button" class="ref-close" data-ref-close title="关闭"><i data-lucide="x"></i></button>
+    </div>
+    <div id="ref-body" class="ref-body"></div>
+  </aside>
 
   <!-- 图标库：Lucide（CDN 免构建；钉定版本） -->
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.js"></script>

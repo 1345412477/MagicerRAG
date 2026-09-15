@@ -14,6 +14,16 @@ docs/
 data/
 scripts/
 
+# 运行时数据库与日志（生产私有内容，不入库；sqlite 的 WAL/SHM 一并忽略）
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.log
+logs/
+nohup.out
+
 # 系统 / IDE
 .idea/
 .vscode/

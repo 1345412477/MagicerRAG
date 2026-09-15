@@ -82,6 +82,7 @@ class ParamsUpdate(BaseModel):
     history_turns: int | None = Field(default=None, ge=1, le=20)
     context_token_budget: int | None = Field(default=None, ge=500, le=60000)
     query_rewrite: bool | None = None
+    suggest_questions: bool | None = None  # W1：回答后推荐追问开关
     mmr_enabled: bool | None = None
     mmr_lambda: float | None = Field(default=None, ge=0, le=1)
     rerank_enabled: bool | None = None
@@ -312,6 +313,8 @@ def update_params(body: ParamsUpdate, admin: dict = Depends(require_admin)):
         updates["context_token_budget"] = str(body.context_token_budget)
     if body.query_rewrite is not None:
         updates["query_rewrite"] = "1" if body.query_rewrite else "0"
+    if body.suggest_questions is not None:
+        updates["suggest_questions"] = "1" if body.suggest_questions else "0"
     if body.mmr_enabled is not None:
         updates["mmr_enabled"] = "1" if body.mmr_enabled else "0"
     if body.mmr_lambda is not None:

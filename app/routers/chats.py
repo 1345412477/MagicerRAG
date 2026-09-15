@@ -132,38 +132,53 @@ async def ask(body: AskIn, user: dict = Depends(get_current_user)):
     # 保存用户消息
     db.add_message(sid, "user", body.question)
 
-    # 检索放线程池执行，避免嵌入网络调用阻塞事件循环
-    try:
-        hits = await asyncio.to_thread(
-            rag_service.retrieve_hits, retrieval_question, body.top_k, dataset_ids
-        )
-    except Exception:  # noqa: BLE001
-        logger.exception("检索失败（session=%s）", sid)
-        raise HTTPException(status_code=500, detail="知识库检索失败，请稍后重试")
-    # R-05：进入 prompt 的资料按 token 预算裁剪（前端来源卡仍展示全量 hits）
-    ctx_hits, _truncated = rag_service.fit_context(hits, rt["context_token_budget"])
-    context = rag_service.build_context(ctx_hits) if ctx_hits else ""
-    msg_id = db.add_message(sid, "assistant", "", hits)
-
     async def event_stream():
-        if context:
-            yield _sse("retrieval", {"hits": hits})
-        else:
-            yield _sse("retrieval", {"hits": []})
-        parts: list[str] = []
+        # W2：检索移入流内，前端阶段条即时反馈「检索中」，不再等检索完成后才开始 SSE
+        yield _sse("stage", {"stage": "retrieve"})
         try:
-            async for delta in rag_service.stream_answer_async(
+            hits = await asyncio.to_thread(
+                rag_service.retrieve_hits, retrieval_question, body.top_k, dataset_ids
+            )
+        except Exception:  # noqa: BLE001 流内错误用 SSE 回显，避免流中途无响应
+            logger.exception("检索失败（session=%s）", sid)
+            yield _sse("stage", {"stage": "error"})
+            yield _sse("delta", {"text": "\n\n[知识库检索失败，请稍后重试]"})
+            yield _sse("done", {"message_id": None, "answer": ""})
+            return
+        # R-05：进入 prompt 的资料按 token 预算裁剪（前端来源卡仍展示全量 hits）
+        ctx_hits, _truncated = rag_service.fit_context(hits, rt["context_token_budget"])
+        context = rag_service.build_context(ctx_hits) if ctx_hits else ""
+        msg_id = db.add_message(sid, "assistant", "", hits)
+        yield _sse("retrieval", {"hits": hits})
+        yield _sse("stage", {"stage": "generate"})
+        parts: list[str] = []
+        reasons: list[str] = []
+        try:
+            async for reason, delta in rag_service.stream_answer_async(
                 body.question, context, history
             ):
-                parts.append(delta)
-                yield _sse("delta", {"text": delta})
+                if reason:
+                    reasons.append(reason)
+                    yield _sse("reasoning", {"text": reason})
+                if delta:
+                    parts.append(delta)
+                    yield _sse("delta", {"text": delta})
         except Exception:  # noqa: BLE001 仅对外回显通用文案，细节落服务端日志
             logger.exception("生成中断（session=%s）", sid)
             note = "\n\n[生成中断，请稍后重试]"
             parts.append(note)
             yield _sse("delta", {"text": note})
         full = "".join(parts)
-        db.update_message_content(msg_id, full)
+        thinking = "".join(reasons)
+        db.update_message_content(msg_id, full, thinking)
+        # W1：回答生成后基于回答+命中资料生成推荐追问（开关开启且命中有意义才做；失败回退兜底）
+        if rt["suggest_questions"] and hits:
+            try:
+                qs = await rag_service.recommend_questions_async(body.question, full, hits)
+                if qs:
+                    yield _sse("suggest", {"questions": qs})
+            except Exception:  # noqa: BLE001 推荐失败不影响主回答
+                logger.warning("推荐追问生成失败（session=%s）", sid)
         yield _sse("done", {"message_id": msg_id, "answer": full})
 
     return StreamingResponse(

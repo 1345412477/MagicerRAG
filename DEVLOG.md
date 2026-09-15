@@ -358,3 +358,25 @@
   3. 前端新增 `state.pendingDs`（待绑定库），`updateComposerDs()` 统一在「新话题 / 会话」视图间切换，`#ds-select` change 与新话题卡片点击都写回 `pendingDs`；`send()` 新建会话时用 `pendingDs` 绑定，续聊由后端 `_resolve_session_datasets` 强制沿用绑定库。
 - **验证**：`node --check app.js` 通过；浏览器 E2E 全量 PASS——空状态出现选择卡片、点击「中国石油化工行业人工智能+产业生态大会」高亮并与底部胶囊同步、发送问题后切换为锁定的该库标签并隐藏下拉、新建另一会话选「我的知识库」发送后锁定该库、切回团队会话锁定标签独立正确；控制台无应用侧 JS 报错（仅一条流式请求中断 `ERR_ABORTED` 属预期）。
 - **阶段 18 补充（显示"知识库#N"缺陷修复）**：左侧会话分组一度把绑定库显示为「知识库#1」「知识库#30」而非真名。根因：`showApp()` 先发 `loadSessions()`、其回调 `renderSessions()` 用 `dsName()` 分组时，异步 `loadDescriptors()` 拉取的知识库 `state.datasets` 尚未就绪 → `dsName` 找不到 id 回退为 `知识库 #id`；且 datasets 加载完成后未重绘会话分组，导致占位持久化。修复：① `loadDescriptors()` 加防重入 promise guard，并在 `state.datasets` 就绪后调用 `renderSessions()` 重绘分组；② `loadSessions()` 开头若 datasets 为空则先 `await loadDescriptors()` 再渲染，让首屏即显示正确名、避免短暂占位闪烁。验证：强刷新登录后，DOM 读取分组 g-label 为「我的知识库」「中国石油化工行业人工智能+产业生态大会」「全部知识库」，无任何 `知识库#N` 占位，控制台无 JS 报错。
+
+## 阶段 19 · WeKnora 借鉴：推荐追问 + 引用抽屉 + RAG 分阶段进度（09-15 · W1/W3/W2）
+
+> 借鉴 Tencent/WeKnora 的体验层设计，三项均为**不改检索语义**的前端/接口增量，贴合「少而精 + 惊喜感」的演示诉求。实现顺序按 W1 → W3 → W2（低风险高价值先行）。
+
+- **W1 · 推荐问题 + 答后追问动态化**：后端 `rag_service.recommend_questions_async()` 基于「用户提问 + 助手回答 + 命中资料」调用 LLM 生成 3 个可点击追问，失败自动回退硬编码三问，不阻塞主回答；`chats.py@ask` 在 `done` 前发 `suggest` 事件。前端 `followUpsHtml()` 优先渲染动态追问，历史消息 / 推荐被关时回退旧三问；空状态选中知识库后展示针对性引导问题。新增 `SUGGEST_QUESTIONS` 配置 + 管理台「建议追问」开关（`runtime_settings` + `admin.py`）。
+- **W3 · 引用抽屉 / 浮层**：命中后不再内嵌展开来源卡，改为「参考资料 N」胶囊触发器（`.cite-trigger`），点击打开右侧固定抽屉（`.ref-drawer`）+ 遮罩（`.ref-overlay`），卡住 `Esc`/遮罩/关闭按钮收起；内联引用段仍支持定位并高亮（P1-2 命中句）。还原对话区纯净观感。
+- **W2 · RAG 分阶段进度条**：`chats.py@ask` 将检索移入 SSE 流内，先发 `stage:retrieve` → 检索完 `retrieval` → `stage:generate` → `delta` → `suggest` → `done`；流内错误发 `stage:error` 并回显通用文案。前端 `showPipelineBar()/hidePipelineBar()` 渲染 `pipeline-bar`，逐段点亮「检索中 → 生成中」，回答完成自动收起、失败标红。用户不再误以为长库 / 大模型下「卡住」。
+- **验证**：`node --check app.js` 通过；`py_compile` 核心文件通过；`import app.main` 冒烟通过；`pytest 40 passed`（新增断言——SSE 含 `stage:retrieve`/`stage:generate`/`suggest` 且动态追问文本正确）。静态版本号由 `_static_version` 内容哈希自动推导。
+
+## 阶段 20 · 推理型模型适配 + DeepSeek-V4.1-Flash 接入（09-15）
+
+> 用户要求把激活模型切换为 DeepSeek-V4.1-Flash。实测 DeepSeek API 不支持该字符串，合法 ID 为 `deepseek-flash` / `deepseek-v4-pro`；故显示名保留「DeepSeek-V4.1-Flash」，API 模型 ID 用 `deepseek-flash`。并顺手修复了推理型模型在应用里「读到空正文」的兼容问题。
+
+- **根因（推理型模型读不到输出）**：`deepseek-flash` 是推理型模型，其输出放在 `reasoning_content`，`message.content` 为空；且推理内容会计入 `max_tokens` 预算。应用两处只读 `content` → 拿到空串 → 兜底：①流式主回答 `stream_answer_async` 读 `delta.content`；②动态推荐 `recommend_questions_async` 读 `message.content` 且 `max_tokens=200` 被思考过程吃光导致 content 为空。
+- **落地**（`app/service/rag_service.py`）：
+  1. 新增 `_delta_text()` / `_message_text()`：`content` 为空时回退 `reasoning_content`（对普通模型行为不变）。
+  2. 推荐 `max_tokens` 200 → 512（给推理预留预算，确保最终正文能返回）。
+  3. 新增 `_extract_json_array()`：对推理链夹杂叙述文本的场景，按括号配平截取第一个 `[...]` 解析，兼容 Flash 的非纯 JSON 输出。
+- **配置**：激活模型 config(id=9) 改为 `model=deepseek-flash`、`display_name=DeepSeek-V4.1-Flash`、base_url `https://api.deepseek.com/v1`，Key 沿用 `.env` 有效值。
+- **验证**：离线直连 `recommend_questions_async` 用 Flash 返回 3 个紧贴上下文的动态追问（如「已有会话如何切换知识库」「按库分组后左侧怎么展示」「跨库污染与变通方案」）；`stream_answer_async` 能出正文；`pytest 40 passed`；`import app.main` 通过。
+- **取舍提示**：推理型模型作为对话模型时，**主回答会输出思维链**（观感偏「思考过程」而非精炼答案），适合演示「推荐追问」等推理能力；若追求干净利落的问答正文，对话模型仍建议 `deepseek-chat`（`deepseek-v4-pro` 亦可）。切换仅需改动管理台激活模型，无需重启。

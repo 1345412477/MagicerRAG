@@ -45,6 +45,7 @@
     currentDs: null,     // 选中的数据集 id
     files: [],           // 当前数据集的文件列表
     pendingDs: null,     // 新会话（未开始）时待绑定的知识库 id；null=全部有权限库
+    refMap: new Map(),   // W3：会话消息 id -> 命中资料（供「参考资料」全局抽屉读取）
   };
 
   const DS_ALL = ""; // ds-select 全选标记
@@ -456,6 +457,22 @@
     });
   }
 
+  // W1：空会话选中知识库后，基于库名生成针对性引导问题（点击即发问）
+  function fillStarters(host, dsId) {
+    if (!host) return;
+    const d = state.datasets.find((x) => x.id === dsId);
+    const name = d ? (d.type === "personal" ? "我的知识库" : d.name) : "全部知识库";
+    const qs = [
+      `${name}里有哪些资料？`,
+      `帮我总结一下${name}的主要内容`,
+      `根据${name}的资料，我该重点关注什么？`,
+    ];
+    host.classList.remove("hidden");
+    host.innerHTML = `<div class="recs-label">可以试试问：</div>` +
+      qs.map((q) => `<button class="chip" data-q="${esc(q)}">${esc(q)}</button>`).join("");
+    hydrateIcons();
+  }
+
   function emptyState() {
     const el = document.createElement("div");
     el.className = "empty-state";
@@ -465,6 +482,8 @@
       const wrap = document.createElement("div");
       wrap.innerHTML = dsPickerHTML();
       const node = wrap.firstElementChild;
+      const starter = document.createElement("div");
+      starter.className = "empty-starters hidden";
       node.addEventListener("click", (e) => {
         const c = e.target.closest(".ds-chip");
         if (!c) return;
@@ -472,8 +491,10 @@
         const sel = $("#ds-select");
         if (sel) sel.value = state.pendingDs == null ? DS_ALL : String(state.pendingDs);
         renderDsSelectedState();
+        fillStarters(starter, state.pendingDs); // W1：选中库后给出针对性引导问题
       });
       el.appendChild(node);
+      el.appendChild(starter);
     }
     populateHomeRecent(el);
     return el;
@@ -528,9 +549,14 @@
     el.dataset.id = m.id;
     const isUser = m.role === "user";
     const avatar = isUser ? (state.username ? state.username[0].toUpperCase() : "U") : "AI";
-    let inner = `<div class="msg-avatar">${avatar}</div><div class="msg-body"><div class="msg-content"></div>`;
+    const think = (m.role === "assistant" && m.reasoning) ? thinkHtml(m.reasoning) : "";
+    let inner = `<div class="msg-avatar">${avatar}</div><div class="msg-body">${think}<div class="msg-content"></div>`;
     if (m.role === "assistant") inner += msgActionsHtml();
-    if (m.role === "assistant" && m.hits && m.hits.length) inner += hitsHtml(m.hits);
+    // W3：来源不再内嵌，改为「参考资料 N」触发按钮打开右侧抽屉
+    if (m.role === "assistant" && m.hits && m.hits.length) {
+      _registerRefs(m.id, m.hits);
+      inner += _refTriggerHtml(_filesCount(m.hits));
+    }
     if (m.role === "assistant") inner += followUpsHtml();
     inner += `</div>`;
     el.innerHTML = inner;
@@ -540,16 +566,27 @@
     return el;
   }
 
+  function thinkHtml(text) {
+    // 推理型模型（deepseek-flash）：思考链折叠展示，与正文分离（WeKnora 风格）
+    const body = text ? esc(text).replace(/\n/g, "<br>") : "";
+    return `<details class="think"><summary><i data-lucide="brain"></i> 思考过程</summary><div class="think-body">${body}</div></details>`;
+  }
+
   function msgActionsHtml() {
     return `<div class="msg-actions"><button class="ma-btn" data-act="up" title="赞"><i data-lucide="thumbs-up"></i></button><button class="ma-btn" data-act="down" title="踩"><i data-lucide="thumbs-down"></i></button><button class="ma-btn" data-act="copy" title="复制"><i data-lucide="copy"></i></button></div>`;
   }
 
-  function followUpsHtml() {
-    return `<div class="recs"><span class="recs-label">你还可以问：</span><button class="chip" data-q="帮我总结一下这份资料">帮我总结一下</button><button class="chip" data-q="我该重点关注哪些内容？">该重点看什么？</button><button class="chip" data-q="根据这些资料生成一份学习笔记">生成学习笔记</button></div>`;
+  function followUpsHtml(questions) {
+    // W1：动态推荐追问优先；无（历史消息/被关闭）时回退硬编码三问
+    const qs = Array.isArray(questions) && questions.length ? questions.slice(0, 3) : null;
+    const chips = qs
+      ? qs.map((q) => `<button class="chip" data-q="${esc(String(q))}">${esc(String(q))}</button>`).join("")
+      : `<button class="chip" data-q="帮我总结一下这份资料">帮我总结一下</button><button class="chip" data-q="我该重点关注哪些内容？">该重点看什么？</button><button class="chip" data-q="根据这些资料生成一份学习笔记">生成学习笔记</button>`;
+    return `<div class="recs"><span class="recs-label">你还可以问：</span>${chips}</div>`;
   }
 
   function hitsHtml(hits) {
-    // 按文件去重聚合：同一文件的多个命中片段合并为一张来源卡片，避免参考资料重复展示
+    // W3：来源卡改为全局「参考资料」抽屉填充；此函数生成抽屉内聚合卡片（含命中高亮定位所需的 data-hit）
     const byFile = new Map();
     const segCount = {};
     hits.forEach((hit, i) => {
@@ -558,7 +595,7 @@
       segCount[k] += 1;
       byFile.get(k).push({ i, hit });
     });
-    let h = `<div class="hits"><div class="cite-header">参考资料 ${byFile.size}</div>`;
+    let h = `<div class="hits">`;
     byFile.forEach((segs, source) => {
       const first = segs[0].i;
       const hit = segs[0].hit;
@@ -574,6 +611,71 @@
     });
     h += `</div>`;
     return h;
+  }
+
+  // W3：汇总命中按文件去重后的来源数量
+  function _filesCount(hits) {
+    return new Set((hits || []).map((x) => x.source)).size;
+  }
+
+  // W3：消息里的「参考资料 N」触发按钮（点击打开右侧抽屉）
+  function _refTriggerHtml(n) {
+    return `<button type="button" class="cite-trigger" data-ref-open><i data-lucide="message-square-quote"></i> 参考资料 ${n || 0}</button>`;
+  }
+
+  function _registerRefs(id, hits) {
+    if (id != null && hits && hits.length) state.refMap.set(String(id), hits);
+  }
+
+  // W3：打开右侧「参考资料」抽屉；hitIdx 为可选的命中下标（内联 [n] 点击时传入）
+  function openRef(id, hitIdx, query) {
+    const hits = state.refMap.get(String(id));
+    if (!hits || !hits.length) return;
+    const body = $("#ref-body"), drawer = $("#ref-drawer");
+    if (!body || !drawer) return;
+    body.innerHTML = hitsHtml(hits);
+    hydrateIcons();
+    $("#ref-title").textContent = `参考资料（${_filesCount(hits)}）`;
+    drawer.classList.add("open"); $("#ref-overlay").classList.remove("hidden");
+    document.body.classList.add("no-scroll");
+    if (hitIdx != null) {
+      const seg = body.querySelector(`.hit-seg[data-hit="${hitIdx}"]`);
+      const card = (seg && seg.closest(".hit-card")) || body.querySelector(`.hit-card[data-i="${hitIdx}"]`);
+      if (card) card.classList.add("open");
+      if (seg) {
+        if (query) highlightHit(seg, query);
+        seg.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        setTimeout(() => { try { seg.scrollIntoView({ behavior: "smooth", block: "nearest" }); } catch (_) {} }, 60);
+      }
+    }
+  }
+
+  function closeRef() {
+    const drawer = $("#ref-drawer"), overlay = $("#ref-overlay");
+    if (drawer) drawer.classList.remove("open");
+    if (overlay) overlay.classList.add("hidden");
+    document.body.classList.remove("no-scroll");
+  }
+
+  // W2：RAG 分阶段进度条。st ∈ retrieve|generate|error，按检索→生成逐段点亮
+  const PIPELINE_STEPS = ["retrieve", "generate"];
+  function showPipelineBar(st) {
+    const bar = $("#pipeline-bar");
+    if (!bar) return;
+    bar.classList.remove("hidden");
+    if (st === "error") { bar.classList.add("error"); return; }
+    bar.classList.remove("error");
+    const cur = st === "generate" ? 1 : 0; // 0=检索中, 1=生成中
+    bar.querySelectorAll(".pipe-step").forEach((s) => {
+      const i = PIPELINE_STEPS.indexOf(s.dataset.st);
+      s.classList.toggle("done", i < cur);   // 前置阶段已完成
+      s.classList.toggle("active", i === cur); // 当前阶段点亮
+    });
+  }
+
+  function hidePipelineBar() {
+    const bar = $("#pipeline-bar");
+    if (bar) bar.classList.add("hidden", "error");
   }
 
   function _tokenize(t) {
@@ -612,26 +714,34 @@
   }
 
   $("#message-list").addEventListener("click", (e) => {
-    const head = e.target.closest(".hit-head");
-    if (head) { const card = head.closest(".hit-card"); card.classList.toggle("open"); return; }
+    // W3：「参考资料 N」按钮 → 打开该消息的右侧抽屉
+    const openBtn = e.target.closest("[data-ref-open]");
+    if (openBtn) {
+      const msg = openBtn.closest(".msg");
+      if (msg && msg.dataset.id) openRef(msg.dataset.id, null, "");
+      return;
+    }
     const cite = e.target.closest(".cite");
     if (cite) {
-      // 点击正文内联引用 → 定位到该文件卡片中的对应命中片段并高亮（支持按文件聚合后的多段卡片）
+      // W3：点击正文内联引用 → 打开该消息抽屉并定位到命中片段
       const msg = cite.closest(".msg");
       const i = cite.dataset.i;
-      const seg = msg && msg.querySelector(`.hit-seg[data-hit="${i}"]`);
-      const card = (seg && seg.closest(".hit-card")) || (msg && msg.querySelector(`.hit-card[data-i="${i}"]`));
-      if (card) {
-        card.classList.add("open");
-        if (seg) seg.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        card.classList.remove("flash"); void card.offsetWidth; card.classList.add("flash");
-        const userMsg = msg.previousElementSibling;
-        const qel = userMsg && userMsg.matches(".msg.user") ? userMsg.querySelector(".msg-content") : null;
-        const target = seg || card.querySelector(".hit-seg") || card.querySelector(".hit-body");
-        highlightHit(target, qel ? qel.textContent : "");
-      }
+      const userMsg = msg && msg.previousElementSibling;
+      const qel = userMsg && userMsg.matches(".msg.user") ? userMsg.querySelector(".msg-content") : null;
+      if (msg && msg.dataset.id) openRef(msg.dataset.id, Number(i), qel ? qel.textContent : "");
     }
   });
+
+  // W3：抽屉内来源卡展开 / 关闭
+  $("#ref-body").addEventListener("click", (e) => {
+    const head = e.target.closest(".hit-head");
+    if (head) { const card = head.closest(".hit-card"); card.classList.toggle("open"); }
+  });
+  $("#ref-drawer").addEventListener("click", (e) => {
+    if (e.target.closest("[data-ref-close]")) closeRef();
+  });
+  $("#ref-overlay").addEventListener("click", closeRef);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeRef(); });
 
   // 消息操作：点赞 / 点踩 / 复制
   $("#message-list").addEventListener("click", (e) => {
@@ -810,6 +920,7 @@
     let answer = "";
     let hits = [];
     let hitsShown = false;
+    let suggestion = null; // W1:suggest 事件带来的推荐追问（done 渲染时优先使用）
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -821,17 +932,46 @@
         if (!ev) continue;
         if (ev.event === "retrieval") {
           hits = ev.data.hits || [];
-          if (!hitsShown && hits.length) {
-            const body = $(".msg-body", ansEl);
-            body.insertAdjacentHTML("beforeend", hitsHtml(hits));
+          if (!hitsShown) {
             hitsShown = true;
+            // W3：命中后不内嵌来源，改为插入「参考资料 N」触发器
+            if (hits.length) {
+              const body = $(".msg-body", ansEl);
+              body.insertAdjacentHTML("beforeend", _refTriggerHtml(_filesCount(hits)));
+              hydrateIcons();
+            }
+          }
+        } else if (ev.event === "reasoning") {
+          // 阶段20：推理型模型的思考链单独折叠展示，与正文分离
+          const body = $(".msg-body", ansEl);
+          if (body) {
+            let tb = body.querySelector(".think");
+            if (!tb) {
+              body.insertAdjacentHTML("afterbegin", thinkHtml(""));
+              tb = body.querySelector(".think");
+              hydrateIcons();
+            }
+            const tbody = tb.querySelector(".think-body");
+            tbody.textContent = (tbody.textContent || "") + (ev.data.text || "");
+            scrollBottom(true);
           }
         } else if (ev.event === "delta") {
           answer += ev.data.text || "";
           contentEl.textContent = cursorSuffix(answer);
           scrollBottom(true);
+        } else if (ev.event === "stage") {
+          const st = ev.data.stage;
+          if (st === "error") { showPipelineBar("error"); setTimeout(hidePipelineBar, 2600); }
+          else showPipelineBar(st); // W2：检索中 / 生成中
+        } else if (ev.event === "suggest") {
+          suggestion = ev.data.questions || null;
         } else if (ev.event === "done") {
           answer = ev.data.answer || answer;
+          setTimeout(hidePipelineBar, 300); // W2：回答完成收起阶段条
+          if (ev.data.message_id != null) {
+            ansEl.dataset.id = ev.data.message_id;
+            _registerRefs(ev.data.message_id, hits);
+          }
           applyMd(contentEl, answer, hits.length);
           // 流式结束补上操作行（与历史消息一致）
           if (!ansEl.querySelector(".msg-actions")) {
@@ -839,7 +979,7 @@
             hydrateIcons();
           }
           if (!ansEl.querySelector(".recs")) {
-            ansEl.querySelector(".msg-body").insertAdjacentHTML("beforeend", followUpsHtml());
+            ansEl.querySelector(".msg-body").insertAdjacentHTML("beforeend", followUpsHtml(suggestion));
             hydrateIcons();
           }
         }
@@ -1751,6 +1891,9 @@
               <label class="model-check"><input id="p-rewrite" type="checkbox" ${d.params.query_rewrite === "1" ? "checked" : ""}> 查询改写（追问检索）</label>
             </div>
             <div class="model-col">
+              <label class="model-check"><input id="p-suggest" type="checkbox" ${d.params.suggest_questions === "1" ? "checked" : ""}> 建议追问（回答后推荐问题）</label>
+            </div>
+            <div class="model-col">
               <label class="model-check"><input id="p-mmr" type="checkbox" ${d.params.mmr_enabled === "1" ? "checked" : ""}> 多样性（MMR）</label>
             </div>
             <div class="model-col">
@@ -2059,6 +2202,7 @@
       context_token_budget: parseInt($("#p-context").value, 10),
       max_context_hits: parseInt($("#p-maxhits").value, 10),
       query_rewrite: $("#p-rewrite").checked,
+      suggest_questions: $("#p-suggest").checked, // W1：建议追问开关
       mmr_enabled: $("#p-mmr").checked,
       mmr_lambda: parseFloat($("#p-mmrl").value),
       rerank_enabled: $("#p-rerank").checked,

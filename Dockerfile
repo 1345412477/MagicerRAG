@@ -31,7 +31,6 @@ WORKDIR /app
 COPY app ./app
 COPY rag ./rag
 COPY config.py .
-COPY docs ./docs
 
 # 非 root 运行 + 数据卷就绪
 RUN mkdir -p /app/data /app/storage && \
