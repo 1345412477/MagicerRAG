@@ -286,19 +286,39 @@
     return d && d.type === "team" ? "users" : "database";
   }
   // 单个会话条目（供分组内渲染）
-  function sessionItemNode(s) {
-    const el = document.createElement("div");
-    el.className = "session-item" + (s.id === state.current ? " active" : "");
-    el.dataset.id = s.id;
-    el.innerHTML = `<span class="s-title">${esc(s.title)}</span><span class="s-time">${esc(timeLabel(s))}</span><span class="s-actions"><button class="s-ren" title="重命名" data-ren="${s.id}"><i data-lucide="pencil"></i></button><button class="s-del" title="删除"><i data-lucide="x"></i></button></span>`;
-    el.addEventListener("click", (e) => { if (!e.target.closest(".s-ren") && !e.target.closest(".s-del")) openSession(s.id); });
-    el.querySelector(".s-ren").addEventListener("click", (e) => { e.stopPropagation(); startRename(el, s); });
-    el.querySelector(".s-del").addEventListener("click", async (e) => {
-      e.stopPropagation();
+  function openSessionMenu(el, s) {
+    document.querySelectorAll(".s-menu-pop").forEach(m => m.remove());
+    const rect = el.getBoundingClientRect();
+    const menu = document.createElement("div");
+    menu.className = "s-menu-pop";
+    menu.innerHTML = `<button class="s-ren"><i data-lucide="pencil"></i> 重命名</button><button class="s-del danger"><i data-lucide="trash-2"></i> 删除</button>`;
+    menu.style.top = (rect.bottom + 4) + "px";
+    menu.style.left = Math.max(8, rect.right - 130) + "px";
+    document.body.appendChild(menu);
+    hydrateIcons();
+    menu.querySelector(".s-ren").addEventListener("click", () => { menu.remove(); startRename(el, s); });
+    menu.querySelector(".s-del").addEventListener("click", async () => {
+      menu.remove();
       if (!await confirmDialog("删除该会话及其全部消息？", { title: "删除会话" })) return;
       await api("/api/chats/sessions/" + s.id, { method: "DELETE" });
       if (state.current === s.id) { state.current = null; resetChat(); }
       loadSessions();
+    });
+    setTimeout(() => { const h = (e) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener("click", h); } }; document.addEventListener("click", h); }, 0);
+  }
+
+  function sessionItemNode(s) {
+    const el = document.createElement("div");
+    el.className = "session-item" + (s.id === state.current ? " active" : "");
+    el.dataset.id = s.id;
+    el.innerHTML = `<span class="s-title">${esc(s.title)}</span><span class="s-more" title="更多"><i data-lucide="ellipsis"></i></span>`;
+    el.addEventListener("click", (e) => {
+      if (e.target.closest(".s-ren") || e.target.closest(".s-del")) return;
+      openSession(s.id);
+    });
+    el.querySelector(".s-more").addEventListener("click", (e) => {
+      e.stopPropagation();
+      openSessionMenu(el, s);
     });
     return el;
   }
@@ -320,9 +340,16 @@
       groups.forEach((g) => {
         const groupEl = document.createElement("div");
         groupEl.className = "session-group";
-        groupEl.innerHTML = `<div class="session-group-head"><i data-lucide="${g.ico}"></i><span class="g-label">${esc(g.label)}</span><span class="g-count">${g.items.length}</span></div><div class="session-group-body"></div>`;
+        const key = g.label;
+        const collapsed = state._collapsed && state._collapsed[key];
+        groupEl.innerHTML = `<div class="session-group-head"><i data-lucide="${g.ico}"></i><span class="g-label">${esc(g.label)}</span><span class="g-count">${g.items.length}</span><i class="g-caret" data-lucide="chevron-${collapsed ? "right" : "down"}"></i></div><div class="session-group-body${collapsed ? " hidden" : ""}"></div>`;
         const body = groupEl.querySelector(".session-group-body");
         g.items.forEach((s) => body.appendChild(sessionItemNode(s)));
+        groupEl.querySelector(".session-group-head").addEventListener("click", () => {
+          state._collapsed = state._collapsed || {};
+          state._collapsed[key] = !state._collapsed[key];
+          renderSessions();
+        });
         list.appendChild(groupEl);
       });
     } else {
@@ -397,6 +424,7 @@
   }
   function renderSessionsHighlights() {
     $$(".session-item").forEach((el) => el.classList.toggle("active", Number(el.dataset.id) === state.current));
+    if (window.innerWidth <= 720) $("#app-view").classList.remove("sidebar-open");
   }
 
   async function renderMessages(id) {
@@ -489,7 +517,7 @@
   function emptyState() {
     const el = document.createElement("div");
     el.className = "empty-state";
-    el.innerHTML = `<div class="empty-logo"><i data-lucide="sparkles"></i></div><p class="empty-title">你好 👋 今天想让 MagicerRAG 帮你做什么？</p><p class="empty-sub">上传你的资料，让 AI 帮你记住、理解、整理和使用</p><div class="home-actions"><button class="home-action" data-act="upload"><span class="ha-ico"><i data-lucide="file-up"></i></span><span>上传资料</span></button><button class="home-action" data-act="ask"><span class="ha-ico"><i data-lucide="messages-square"></i></span><span>问我的资料</span></button><button class="home-action" data-act="summarize"><span class="ha-ico"><i data-lucide="file-text"></i></span><span>总结文档</span></button><button class="home-action" data-act="search"><span class="ha-ico"><i data-lucide="search"></i></span><span>搜索资料</span></button></div>`;
+    el.innerHTML = `<div class="empty-logo"><i data-lucide="sparkles"></i></div><p class="empty-title">你好 👋 今天想让 MagicerRAG 帮你做什么？</p><p class="empty-sub">上传你的资料，让 AI 帮你记住、理解、整理和使用</p>`;
     // N9：新话题（尚未进入会话）时，在空状态中央展示知识库选择卡片
     if (!state.current) {
       const wrap = document.createElement("div");
@@ -795,10 +823,16 @@
 
   // 侧栏折叠
   $("#btn-collapse").addEventListener("click", () => {
+    if (window.innerWidth <= 720) {
+      $("#app-view").classList.toggle("sidebar-open");
+      return;
+    }
     const collapsed = $("#app-view").classList.toggle("sidebar-collapsed");
     $("#btn-collapse").innerHTML = `<i data-lucide="${collapsed ? "panel-left-open" : "panel-left-close"}"></i>`;
     hydrateIcons();
   });
+  const _closeSidebar = () => $("#app-view").classList.remove("sidebar-open");
+  $("#sidebar-mask").addEventListener("click", _closeSidebar);
 
   /* ---------- 输入与流式问答 ---------- */
   const input = $("#input");
@@ -1657,9 +1691,7 @@
       if (wrap) setProg(done / total);
     }
     if (ok > 0) {
-      // 上传后自动重建索引，保证立即可检索（R-06：后台任务 + 进度）
-      toast(`已上传 ${ok} 个文件，开始重建索引…`);
-      await runRebuild(state.currentDs).catch(() => {});
+      toast(`已上传 ${ok} 个文件，点击"重建索引"后生效`);
     } else {
       toast("没有文件上传成功", true);
     }
@@ -1672,11 +1704,6 @@
   dropzone.addEventListener("drop", (e) => handleFiles(e.dataTransfer.files));
 
   // 文件夹上传（webkitdirectory 一次选取整棵目录树）
-  const folderInput = $("#folder-input");
-  const btnFolder = $("#btn-upload-folder");
-  btnFolder.addEventListener("click", () => folderInput.click());
-  folderInput.addEventListener("change", () => { handleFiles(folderInput.files); folderInput.value = ""; });
-
   // 新建团队库
   function openTeamModal() { $("#team-modal").classList.remove("hidden"); $("#team-name").value = ""; $("#team-name").focus(); }
   function closeTeamModal() { $("#team-modal").classList.add("hidden"); }

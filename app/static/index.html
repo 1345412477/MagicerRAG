@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MagicerRAG · 你的个人 AI 知识助手</title>
-  <link rel="stylesheet" href="/static/style.css?v=6">
+  <link rel="stylesheet" href="/static/style.css?v=1">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236d62f5' stroke-width='2'><path d='M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3z'/></svg>">
 </head>
 <body>
@@ -85,6 +85,7 @@
         </div>
       </div>
     </aside>
+    <div id="sidebar-mask" class="sidebar-mask"></div>
 
     <!-- 主区域 -->
     <main class="main">
@@ -109,12 +110,6 @@
           <div class="empty-logo"><i data-lucide="sparkles"></i></div>
           <p class="empty-title">你好 👋 今天想让 MagicerRAG 帮你做什么？</p>
           <p class="empty-sub">上传你的资料，让 AI 帮你记住、理解、整理和使用</p>
-          <div class="home-actions">
-            <button class="home-action" data-act="upload"><span class="ha-ico"><i data-lucide="file-up"></i></span><span>上传资料</span></button>
-            <button class="home-action" data-act="ask"><span class="ha-ico"><i data-lucide="messages-square"></i></span><span>问我的资料</span></button>
-            <button class="home-action" data-act="summarize"><span class="ha-ico"><i data-lucide="file-text"></i></span><span>总结文档</span></button>
-            <button class="home-action" data-act="search"><span class="ha-ico"><i data-lucide="search"></i></span><span>搜索资料</span></button>
-          </div>
           <div class="home-recent" id="home-recent"></div>
         </div>
       </div>
@@ -134,7 +129,7 @@
           <input id="home-file-input" type="file" multiple accept=".md,.txt,.html,.doc,.docx,.pdf,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.bmp,.webp" class="hidden">
           <input id="chat-image-input" type="file" multiple accept="image/*" class="hidden">
           <div id="img-preview" class="img-preview hidden"></div>
-          <textarea id="input" class="input" rows="1" placeholder="输入你的问题，回车发送（Shift+回车换行）"></textarea>
+          <textarea id="input" class="input" rows="1" placeholder="输入你的问题…"></textarea>
           <button id="btn-send" class="btn-send" title="发送" disabled><i data-lucide="send"></i></button>
         </div>
       </footer>
@@ -188,8 +183,6 @@
                 <input id="file-input" type="file" multiple accept=".md,.txt,.html,.doc,.docx,.pdf,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.bmp,.webp">
                 <i data-lucide="upload"></i> 上传文档
               </label>
-              <input id="folder-input" type="file" webkitdirectory class="hidden">
-              <button id="btn-upload-folder" class="btn btn-outline" title="选择整个文件夹上传（含子目录）"><i data-lucide="folder-open"></i> 上传文件夹</button>
               <button id="btn-rebuild" class="btn btn-primary"><i data-lucide="refresh-cw"></i> 重建索引</button>
               <button id="btn-chunk-config" class="btn btn-outline" title="内容分块模板与参数"><i data-lucide="sliders-horizontal"></i> 分块设置</button>
               <button id="btn-chunk-preview" class="btn btn-ghost" title="查看当前文档将如何分块"><i data-lucide="scan-line"></i> 分块预览</button>
@@ -420,6 +413,6 @@
   <script src="/static/vendor/marked.min.js"></script>
   <script src="/static/vendor/purify.min.js"></script>
   <script src="/static/vendor/highlight.min.js"></script>
-  <script src="/static/app.js?v=7"></script>
+  <script src="/static/app.js?v=1"></script>
 </body>
 </html>
