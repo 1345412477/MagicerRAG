@@ -178,15 +178,16 @@ input, textarea { font-family: inherit; color: inherit; }
 /* 会话搜索框 */
 .session-search-wrap { position: relative; display: flex; align-items: center; }
 .session-search-ico {
-  position: absolute; left: 11px; width: 15px; height: 15px; color: var(--text-muted);
-  pointer-events: none;
+  /* top:50%+translateY 使图标不依赖父容器 flex 也能垂直居中（移动端 wrap 变 block 时仍对齐） */
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  width: 16px; height: 16px; color: var(--text-muted); pointer-events: none;
 }
 .session-search {
   flex: 1; background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 9px 12px 9px 34px;
-  font-size: 13px; outline: none; transition: border .2s var(--ease);
+  border-radius: 12px; padding: 9px 12px 9px 36px;
+  font-size: 14px; outline: none; transition: border .2s var(--ease);
 }
-.session-search:focus { border-color: var(--brand); }
+.session-search:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
 .session-search::placeholder { color: var(--text-muted); }
 
 .session-list { flex: 1; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 6px; }
@@ -1631,6 +1632,7 @@ html, body { height: 100%; }
   .sidebar-name, .sidebar-item span, .user-name { display: inline; }
   .sidebar-item { justify-content: flex-start; }
   .session-search-wrap { display: block; }
+  .session-search { width: 100%; }
   .btn-new-session { display: flex !important; }
   .app-view.sidebar-open .sidebar { transform: translateX(0); }
   .sidebar-mask {
