@@ -16,6 +16,10 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 _COOKIE_AGE = 7 * 24 * 3600
 
 
+def _current_invite_code() -> str:
+    return db.get_setting("invite_code") or INVITE_CODE
+
+
 def _set_session_cookie(response: Response, request: Request, token: str):
     response.set_cookie(
         key=SESSION_COOKIE,
@@ -61,7 +65,7 @@ def register(body: RegisterIn, response: Response, request: Request):
         # 超管账号：免邀请码播种，但仅允许一次；已存在则拒绝同名注册，防止被抢先注册为超管。
         if db.get_user_by_name(ADMIN_USERNAME):
             raise HTTPException(status_code=409, detail="超管账号已存在，不可重复注册")
-    elif not body.invite_code or body.invite_code != INVITE_CODE:
+    elif not body.invite_code or body.invite_code != _current_invite_code():
         raise HTTPException(status_code=403, detail="邀请码不正确")
     if db.get_user_by_name(body.username):
         raise HTTPException(status_code=409, detail="用户名已存在")
@@ -146,13 +150,13 @@ def admin_delete_user(user_id: int, admin: dict = Depends(require_admin)):
 def get_invite_code(user: dict = Depends(get_current_user)):
     if not user["is_admin"]:
         raise HTTPException(status_code=403, detail="需要超级管理员权限")
-    return {"invite_code": INVITE_CODE}
+    return {"invite_code": _current_invite_code()}
 
 
 @router.put("/invite-code")
 def set_invite_code(body: SetInviteCode, admin: dict = Depends(require_admin)):
-    # 仅运行时生效；持久化到 .env 需手动改配置
     global INVITE_CODE
     INVITE_CODE = body.invite_code
+    db.set_setting("invite_code", body.invite_code)
     db.add_audit(admin["id"], admin["username"], "invite_code.set", "", "invite_code 已更新")
     return {"invite_code": body.invite_code}
