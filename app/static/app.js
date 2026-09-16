@@ -232,11 +232,16 @@
   /* ---------- 会话 ---------- */
   async function loadSessions() {
     try {
-      // N9：会话分组名依赖知识库名称 —— 先确保 datasets 就绪，首屏即显示正确名而非"知识库 #id"
-      if (state.datasets.length === 0) await loadDescriptors();
+      await loadDescriptors();
       const res = await api("/api/chats/sessions");
       state.sessions = await res.json();
       renderSessions();
+      // 首屏偶发鉴权竞态导致列表为空：再拉一次兜底
+      if (!state.sessions || state.sessions.length === 0) {
+        const res2 = await api("/api/chats/sessions");
+        state.sessions = await res2.json();
+        renderSessions();
+      }
     } catch (err) { toast(err.message, true); }
   }
 
