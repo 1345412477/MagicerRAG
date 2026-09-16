@@ -145,7 +145,7 @@ input, textarea { font-family: inherit; color: inherit; }
 .btn-primary:hover { filter: brightness(1.08); box-shadow: 0 6px 18px rgba(109,98,245,.35); }
 .btn-primary:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
 .btn-outline {
-  background: transparent;
+  background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text);
 }
@@ -891,7 +891,7 @@ mark.cite-hit {
   .kb-main { padding: 14px; }
   .kb-toolbar { gap: 10px; }
   .kb-title { font-size: 18px; }
-  .kb-toolbar-actions { width: 100%; }
+  .kb-toolbar-actions { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .kb-toolbar-actions .btn { flex: 1 1 auto; justify-content: center; }
   .kb-section { padding: 14px 12px; }
   .kb-tr, .kb-file { grid-template-columns: minmax(18px,auto) minmax(0,1fr) 56px 76px; }
