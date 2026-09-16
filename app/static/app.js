@@ -127,6 +127,9 @@
   function showApp() {
     $("#auth-view").classList.add("hidden");
     $("#app-view").classList.remove("hidden");
+    $("#app-view").classList.remove("app-enter");
+    void $("#app-view").offsetWidth; /* 重排以重启动画 */
+    $("#app-view").classList.add("app-enter");
     hideSubPages();
     $("#user-name").textContent = state.username;
     $("#user-ava").textContent = (state.username || "U")[0].toUpperCase();
@@ -197,6 +200,7 @@
       if (!res.ok) { authErr().textContent = (await res.json()).detail; return; }
       setSession(await res.json());
       showApp();
+      toast(`欢迎回来，${state.username}！`);
     } catch (err) { authErr().textContent = err.message; }
   });
 
@@ -212,6 +216,7 @@
       if (!res.ok) { authErr().textContent = (await res.json()).detail; return; }
       setSession(await res.json());
       showApp();
+      toast(`欢迎加入，${state.username}！`);
     } catch (err) { authErr().textContent = err.message; }
   });
 
@@ -281,7 +286,7 @@
     el.querySelector(".s-ren").addEventListener("click", (e) => { e.stopPropagation(); startRename(el, s); });
     el.querySelector(".s-del").addEventListener("click", async (e) => {
       e.stopPropagation();
-      if (!confirm("删除该会话及其全部消息？")) return;
+      if (!await confirmDialog("删除该会话及其全部消息？", { title: "删除会话" })) return;
       await api("/api/chats/sessions/" + s.id, { method: "DELETE" });
       if (state.current === s.id) { state.current = null; resetChat(); }
       loadSessions();
@@ -1294,7 +1299,7 @@
   async function batchDeleteFiles() {
     const ids = [...selectedFiles];
     if (!ids.length || !state.currentDs) return;
-    if (!confirm(`确认删除选中的 ${ids.length} 个文件？删除后需重新上传并重建索引。`)) return;
+    if (!await confirmDialog(`确认删除选中的 ${ids.length} 个文件？删除后需重新上传并重建索引。`, { title: "批量删除" })) return;
     try {
       await api(`/api/kb/datasets/${state.currentDs}/files/batch-delete`, {
         method: "POST", body: JSON.stringify({ ids }), headers: { "Content-Type": "application/json" },
@@ -1415,7 +1420,7 @@
   }
 
   async function deleteFile(f) {
-    if (!confirm(`删除文件「${f.filename}」？删除后需重新上传并重建索引。`)) return;
+    if (!await confirmDialog(`删除文件「${f.filename}」？删除后需重新上传并重建索引。`, { title: "删除文件" })) return;
     try {
       await api(`/api/kb/datasets/${state.currentDs}/files/${f.id}`, { method: "DELETE" });
       toast("文件已删除");
@@ -1664,7 +1669,7 @@
           const del = document.createElement("button");
           del.className = "m-kick"; del.textContent = "移除";
           del.addEventListener("click", async () => {
-            if (!confirm(`将 ${m.username} 移出该团队库？`)) return;
+            if (!await confirmDialog(`将 ${m.username} 移出该团队库？`, { title: "移出成员" })) return;
             try { await api(`/api/kb/datasets/${state.currentDs}/members/${m.id}`, { method: "DELETE" }); loadMembers(); }
             catch (err) { toast(err.message, true); }
           });
@@ -1798,7 +1803,7 @@
           del.className = "m-kick danger";
           del.textContent = "删除";
           del.addEventListener("click", async () => {
-            if (!confirm(`确认删除用户 ${u.username}？该操作不可恢复。`)) return;
+            if (!await confirmDialog(`确认删除用户 ${u.username}？该操作不可恢复。`, { title: "删除用户" })) return;
             try { await api(`/api/auth/admin/users/${u.id}`, { method: "DELETE" }); loadUsers(); }
             catch (err) { toast(err.message, true); }
           });
@@ -2186,7 +2191,7 @@
     finally { if (btn) btn.disabled = false; }
   }
   async function deleteModel(id) {
-    if (!confirm("确认删除该模型配置？删除后不可恢复。")) return;
+    if (!await confirmDialog("确认删除该模型配置？删除后不可恢复。", { title: "删除模型" })) return;
     try {
       const r = await apiJson(`/api/admin/model/${id}`, { method: "DELETE" });
       loadModelForm();
@@ -2235,7 +2240,7 @@
     } catch (err) { /* 权限或暂时不可用则忽略 */ }
   }
   async function rebuildAll() {
-    if (!confirm("将重建所有知识库的索引，期间检索可能较慢。继续？")) return;
+    if (!await confirmDialog("将重建所有知识库的索引，期间检索可能较慢。继续？", { title: "重建索引" })) return;
     const btn = $("#btn-rebuild-all"), prog = $("#emb-rebuild-progress");
     if (btn) { btn.disabled = true; btn.innerHTML = "重建中…"; }
     if (prog) prog.textContent = "0%";
@@ -2291,7 +2296,7 @@
   });
 
   /* ---------- 其它 ---------- */
-  $("#btn-logout").addEventListener("click", () => { if (confirm("确定退出登录？")) logout(); });
+  $("#btn-logout").addEventListener("click", async () => { if (await confirmDialog("确定退出登录？", { title: "退出登录" })) logout(); });
   $("#btn-theme").addEventListener("click", () => applyTheme(state.theme === "dark" ? "light" : "dark"));
 
   let toastTimer = null;
@@ -2302,6 +2307,25 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { t.className = "toast"; }, 3200);
   }
+
+  /* 通用确认框（替代浏览器原生 confirm，居中美观） */
+  let cmResolve = null;
+  function confirmDialog(msg, { title = "确认操作" } = {}) {
+    return new Promise((resolve) => {
+      cmResolve = resolve;
+      $("#cm-title").textContent = title;
+      $("#cm-msg").textContent = msg;
+      $("#confirm-modal").classList.remove("hidden");
+      hydrateIcons();
+    });
+  }
+  function cmClose(val) {
+    $("#confirm-modal").classList.add("hidden");
+    if (cmResolve) { const r = cmResolve; cmResolve = null; r(val); }
+  }
+  $("#cm-cancel").addEventListener("click", () => cmClose(false));
+  $("#cm-ok").addEventListener("click", () => cmClose(true));
+  $("#confirm-modal").addEventListener("click", (e) => { if (e.target === e.currentTarget) cmClose(false); });
 
   /* ---------- 启动 ---------- */
   function boot() {

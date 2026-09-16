@@ -397,6 +397,21 @@
     <div id="ref-body" class="ref-body"></div>
   </aside>
 
+  <!-- 通用确认框（替代浏览器原生 confirm） -->
+  <div id="confirm-modal" class="cm-overlay hidden">
+    <div class="cm-dialog" role="alertdialog" aria-modal="true">
+      <div class="cm-icon" id="cm-icon"><i data-lucide="triangle-alert"></i></div>
+      <div class="cm-text">
+        <div class="cm-title" id="cm-title">确认操作</div>
+        <div class="cm-msg" id="cm-msg"></div>
+      </div>
+      <div class="cm-actions">
+        <button class="btn btn-ghost" id="cm-cancel">取消</button>
+        <button class="btn btn-danger" id="cm-ok">确定</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 图标库：Lucide（CDN 免构建；钉定版本） -->
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.js"></script>
   <!-- 富文本渲染依赖（本地化）：marked 解析 Markdown，DOMPurify 净化 HTML，highlight 代码着色 -->
