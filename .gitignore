@@ -28,3 +28,8 @@ nohup.out
 .idea/
 .vscode/
 .DS_Store
+
+# 运行产物 / 本地预览
+uvicorn.out
+_ui_preview.html
+app/static/chat-uploads/

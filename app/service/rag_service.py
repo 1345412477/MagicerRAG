@@ -10,6 +10,19 @@ from config import TOP_K
 from rag.retriever import get_or_create_store, retrieve
 from .. import db, runtime_settings
 
+# 常见支持视觉（多模态）的模型关键字；模型名命中其一即认为可看图
+_VISION_HINTS = (
+    "gpt-4o", "gpt-4.1", "gpt-5", "o1", "o3", "o4",
+    "qwen-vl", "qwen2-vl", "qwen2.5-vl", "qwen3-vl", "vl-",
+    "glm-4v", "glm-4.5v", "glm-4v", "glm-vision",
+    "gemini", "claude-3", "claude-4", "claude-3.5", "claude-3.7",
+    "doubao-vision", "vision", "-vl", "image-to-text", "llava",
+)
+
+def supports_vision(model: str | None) -> bool:
+    m = (model or "").lower()
+    return any(h in m for h in _VISION_HINTS)
+
 # AsyncOpenAI 客户端按 base_url 缓存复用（同一地址不重复建连接池）；
 # model/temperature 在请求时传入，故切换模型即时生效，仅更换地址才新建 client。
 _ahttp_clients: dict[str, AsyncOpenAI] = {}
@@ -134,12 +147,14 @@ def build_messages(
     history: list[dict] | None = None,
     history_budget: int = 8000,
     total_budget: int | None = None,
+    images: list[str] | None = None,
 ) -> list[dict]:
     """组装 LLM 消息：system + 裁剪后的历史 + 当前问题与资料。
 
     N5：对「历史 + 当前资料 + system」做一次**联合总预算校验**，合计超限时
     优先压缩历史（当前资料已在 fit_context 按 context_token_budget 预裁剪），
     遵循「宁可截历史，也不截当前资料」的原则。
+    images：随消息附带的图片 URL，非空时最终用户消息改为多模态结构。
     """
     user_msg = f"问题：{question}\n\n资料：\n{context}"
     overhead = _est_tokens(_SERVICE_SYSTEM) + _est_tokens(user_msg) + 16
@@ -152,7 +167,13 @@ def build_messages(
     if history:
         for m in _fit_history(history, cap):
             msgs.append({"role": m["role"], "content": m["content"]})
-    msgs.append({"role": "user", "content": user_msg})
+    if images:
+        parts: list[dict] = [{"type": "text", "text": user_msg}]
+        for u in images[:4]:
+            parts.append({"type": "image_url", "image_url": {"url": u}})
+        msgs.append({"role": "user", "content": parts})
+    else:
+        msgs.append({"role": "user", "content": user_msg})
     return msgs
 
 
@@ -212,7 +233,7 @@ def rewrite_question(question: str, history: list[dict] | None = None) -> str:
         return question
 
 
-async def stream_answer_async(question: str, context: str, history: list[dict] | None = None) -> Iterator[tuple[str, str]]:
+async def stream_answer_async(question: str, context: str, history: list[dict] | None = None, images: list[str] | None = None) -> Iterator[tuple[str, str]]:
     """异步流式生成（SSE 用）：基于 AsyncOpenAI，不在事件循环里阻塞。
 
     每个产出一组 (reasoning, content)。推理型模型（如 deepseek-flash）分别流式回吐
@@ -227,6 +248,7 @@ async def stream_answer_async(question: str, context: str, history: list[dict] |
         history,
         rt["context_token_budget"],
         total_budget=rt["context_token_budget"] * 2,
+        images=images,
     )
     stream = await client.chat.completions.create(
         model=rt["model"],

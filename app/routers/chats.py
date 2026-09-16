@@ -5,10 +5,12 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import secrets
 import time
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from .. import db, runtime_settings
@@ -18,7 +20,27 @@ from ..service import rag_service
 
 logger = logging.getLogger("magicerrag")
 
+# 对话内随消息上传的图片：存到静态目录下，直接以 /static/... 提供
+_CHAT_UPLOAD_DIR = Path(__file__).resolve().parent.parent / "static" / "chat-uploads"
+_CHAT_ALLOWED = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+_CHAT_MAX = 8 * 1024 * 1024  # 8MB
+
+
 router = APIRouter(prefix="/api/chats", tags=["chats"])
+
+
+@router.post("/upload-image")
+async def upload_image(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    ext = (Path(file.filename or "").suffix or "").lower()
+    if ext not in _CHAT_ALLOWED:
+        raise HTTPException(status_code=400, detail="仅支持 PNG/JPG/JPEG/WEBP/GIF 图片")
+    content = await file.read()
+    if not content or len(content) > _CHAT_MAX:
+        raise HTTPException(status_code=413, detail="图片需在 8MB 以内")
+    _CHAT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    name = f"{secrets.token_hex(16)}{ext}"
+    (_CHAT_UPLOAD_DIR / name).write_bytes(content)
+    return {"url": f"/static/chat-uploads/{name}"}
 
 
 def _session_out(row) -> dict:
@@ -133,6 +155,12 @@ async def ask(body: AskIn, user: dict = Depends(get_current_user)):
     db.add_message(sid, "user", body.question)
 
     async def event_stream():
+        # 当前模型不支持看图时，直接回提示，避免多模态请求报错
+        if body.images and not rag_service.supports_vision(rt["model"]):
+            yield _sse("stage", {"stage": "error"})
+            yield _sse("delta", {"text": "⚠️ 当前模型暂不支持图片识别，请在「模型管理」中切换为支持视觉的模型（如 gpt-4o / qwen-vl / glm-4v 等）后再发送图片。"})
+            yield _sse("done", {"message_id": None, "answer": ""})
+            return
         # W2：检索移入流内，前端阶段条即时反馈「检索中」，不再等检索完成后才开始 SSE
         yield _sse("stage", {"stage": "retrieve"})
         try:
@@ -155,7 +183,7 @@ async def ask(body: AskIn, user: dict = Depends(get_current_user)):
         reasons: list[str] = []
         try:
             async for reason, delta in rag_service.stream_answer_async(
-                body.question, context, history
+                body.question, context, history, images=body.images
             ):
                 if reason:
                     reasons.append(reason)

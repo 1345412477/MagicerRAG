@@ -22,8 +22,6 @@ class _Rule:
 #   generate : 调用大模型生成，限制并发控成本
 #   generic  : 其余 /api 接口的兜底
 _RULES: dict[str, _Rule] = {
-    "/api/auth/login": _Rule(10, 60),
-    "/api/auth/register": _Rule(10, 60),
     # 仅对真正触发大模型生成的 /api/chats/ask 限流；其余会话浏览类接口走通用兜底
     "/api/chats/ask": _Rule(20, 60),
 }

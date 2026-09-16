@@ -99,7 +99,7 @@
     const method = (opts.method || "GET").toUpperCase();
     if (method !== "GET" && method !== "HEAD" && state.csrf) headers["X-CSRF-Token"] = state.csrf;
     const res = await fetch(path, { ...opts, headers });
-    if (res.status === 401) { logout(); throw new Error("登录已失效"); }
+    if (res.status === 401 && state.username) { logout(); throw new Error("登录已失效"); }
     if (!res.ok) {
       let detail = res.statusText;
       try { detail = (await res.json()).detail || detail; } catch (_) {}
@@ -137,7 +137,12 @@
     const saved = loadView();
     if (saved && saved.page === "kb") { if (saved.ds) state.currentDs = saved.ds; openKbPage(); }
     else if (saved && saved.page === "admin") { openAdminPage(); if (saved.adm) switchAdm(saved.adm); }
-    else { if (saved && saved.session) { state.current = saved.session; state._restore = true; } loadSessions(); }
+    else {
+      if (state._freshLogin) { state._freshLogin = false; }
+      // 无论新登录还是刷新，默认都停在新会话页，不自动恢复上次对话
+      state.current = null; state._restore = false; state._bootSkip = true;
+      loadSessions();
+    }
     loadDescriptors();
   }
   function hideSubPages() {
@@ -145,6 +150,7 @@
     $("#admin-page").classList.add("hidden");
   }
   function logout() {
+    const who = state.username;
     if (state.abortCtrl) state.abortCtrl.abort();
     state.token = ""; state.username = ""; state.isAdmin = false;
     state.csrf = "";
@@ -155,6 +161,7 @@
     selectedFiles.clear();
     resetChat();               // 清空消息区，避免下一用户登录后看到上一位的对话
     showAuth();
+    toast(`已退出登录${who ? "，" + who : ""}，期待下次再见！`);
   }
   function setSession(data) {
     state.username = data.user.username;
@@ -199,6 +206,7 @@
       });
       if (!res.ok) { authErr().textContent = (await res.json()).detail; return; }
       setSession(await res.json());
+      state._freshLogin = true;
       showApp();
       toast(`欢迎回来，${state.username}！`);
     } catch (err) { authErr().textContent = err.message; }
@@ -215,6 +223,7 @@
       });
       if (!res.ok) { authErr().textContent = (await res.json()).detail; return; }
       setSession(await res.json());
+      state._freshLogin = true;
       showApp();
       toast(`欢迎加入，${state.username}！`);
     } catch (err) { authErr().textContent = err.message; }
@@ -320,6 +329,7 @@
       items.forEach((s) => list.appendChild(sessionItemNode(s)));
     }
     hydrateIcons();
+    if (state._bootSkip) { /* 新登录：只渲染列表，不自动打开任何会话；重复渲染也保持新会话页 */ resetChat(); return; }
     if (state._restore) {
       state._restore = false;
       if (state.current && state.sessions.some((s) => s.id === state.current)) openSession(state.current);
@@ -362,6 +372,7 @@
   $("#btn-new-session").addEventListener("click", () => {
     if (state.streaming) return;
     state.current = null;       // 不立即新建会话，先回到问答主页
+    state._bootSkip = false;
     resetChat();                // 清空消息区，回到起始态
     updateComposerDs();         // N9：新话题 → 重新可选知识库
     renderSessionsHighlights(); // 取消侧边栏高亮
@@ -374,6 +385,7 @@
   async function openSession(id) {
     if (state.abortCtrl) state.abortCtrl.abort();
     state.current = id;
+    state._bootSkip = false;
     saveView();
     renderSessionsHighlights();
     const s = state.sessions.find((x) => x.id === id);
@@ -440,25 +452,21 @@
   $("#btn-share-session").addEventListener("click", shareSession);
 
   function dsPickerHTML() {
-    const chip = (val, label, ico) => {
-      const isAll = val === "";
-      const active = state.pendingDs == null
-        ? isAll
-        : (!isAll && state.pendingDs === Number(val));
-      return `<button type="button" class="ds-chip${active ? " active" : ""}" data-ds="${val}" title="${esc(label)}"><i data-lucide="${ico}"></i><span>${esc(label)}</span></button>`;
-    };
-    const list = [chip("", "全部知识库", "layers")];
-    state.datasets.forEach((d) => {
-      list.push(chip(String(d.id), d.type === "personal" ? "我的知识库" : d.name, d.type === "personal" ? "book-open" : "users"));
-    });
-    return `<div class="ds-pick"><div class="ds-pick-label">从哪个知识库开始对话？</div><div class="ds-pick-chips">${list.join("")}</div></div>`;
+    const items = [{ v: "", label: "全部知识库", ico: "layers" }];
+    state.datasets.forEach((d) => items.push({ v: String(d.id), label: d.type === "personal" ? "我的知识库" : d.name, ico: d.type === "personal" ? "book-open" : "users" }));
+    const cur = items.find((it) => (state.pendingDs == null ? it.v === "" : it.v === String(state.pendingDs))) || items[0];
+    return `<div class="ds-pick"><div class="ds-pick-label">从哪个知识库开始对话？</div>
+      <div class="ds-drop">
+        <button type="button" class="ds-drop-btn"><i data-lucide="${cur.ico}"></i><span class="ds-drop-cur">${esc(cur.label)}</span><i data-lucide="chevron-down" class="ds-drop-chev"></i></button>
+        <div class="ds-drop-list">${items.map((it) => `<div class="ds-drop-item" data-v="${it.v}"><i data-lucide="${it.ico}"></i><span>${esc(it.label)}</span></div>`).join("")}</div>
+      </div></div>`;
   }
 
   function renderDsSelectedState() {
-    $$("#message-list .ds-chip").forEach((c) => {
-      const v = c.dataset.ds === "" ? null : Number(c.dataset.ds);
+    $$("#message-list .ds-drop-item").forEach((it) => {
+      const v = it.dataset.v === "" ? null : Number(it.dataset.v);
       const cur = state.pendingDs == null ? null : state.pendingDs;
-      c.classList.toggle("active", cur === v);
+      it.classList.toggle("sel", cur === v);
     });
   }
 
@@ -481,7 +489,7 @@
   function emptyState() {
     const el = document.createElement("div");
     el.className = "empty-state";
-    el.innerHTML = `<div class="empty-logo"><i data-lucide="sparkles"></i></div><p class="empty-title">你好 👋 今天想让 MagicerRAG 帮你做什么？</p><p class="empty-sub">上传你的资料，让 AI 帮你记住、理解、整理和使用</p><div class="home-actions"><button class="home-action" data-act="upload"><span class="ha-ico"><i data-lucide="file-up"></i></span><span>上传资料</span></button><button class="home-action" data-act="ask"><span class="ha-ico"><i data-lucide="messages-square"></i></span><span>问我的资料</span></button><button class="home-action" data-act="summarize"><span class="ha-ico"><i data-lucide="file-text"></i></span><span>总结文档</span></button><button class="home-action" data-act="search"><span class="ha-ico"><i data-lucide="search"></i></span><span>搜索资料</span></button></div><div class="home-recent" id="home-recent"></div>`;
+    el.innerHTML = `<div class="empty-logo"><i data-lucide="sparkles"></i></div><p class="empty-title">你好 👋 今天想让 MagicerRAG 帮你做什么？</p><p class="empty-sub">上传你的资料，让 AI 帮你记住、理解、整理和使用</p><div class="home-actions"><button class="home-action" data-act="upload"><span class="ha-ico"><i data-lucide="file-up"></i></span><span>上传资料</span></button><button class="home-action" data-act="ask"><span class="ha-ico"><i data-lucide="messages-square"></i></span><span>问我的资料</span></button><button class="home-action" data-act="summarize"><span class="ha-ico"><i data-lucide="file-text"></i></span><span>总结文档</span></button><button class="home-action" data-act="search"><span class="ha-ico"><i data-lucide="search"></i></span><span>搜索资料</span></button></div>`;
     // N9：新话题（尚未进入会话）时，在空状态中央展示知识库选择卡片
     if (!state.current) {
       const wrap = document.createElement("div");
@@ -490,18 +498,32 @@
       const starter = document.createElement("div");
       starter.className = "empty-starters hidden";
       node.addEventListener("click", (e) => {
-        const c = e.target.closest(".ds-chip");
-        if (!c) return;
-        state.pendingDs = c.dataset.ds === "" ? null : Number(c.dataset.ds);
-        const sel = $("#ds-select");
-        if (sel) sel.value = state.pendingDs == null ? DS_ALL : String(state.pendingDs);
-        renderDsSelectedState();
-        fillStarters(starter, state.pendingDs); // W1：选中库后给出针对性引导问题
+        const drop = node.querySelector(".ds-drop");
+        const item = e.target.closest(".ds-drop-item");
+        if (item) {
+          state.pendingDs = item.dataset.v === "" ? null : Number(item.dataset.v);
+          const sel = $("#ds-select");
+          if (sel) sel.value = state.pendingDs == null ? DS_ALL : String(state.pendingDs);
+          syncCsLabel(sel);
+          node.querySelector(".ds-drop-cur").textContent = item.querySelector("span").textContent;
+          renderDsSelectedState();
+          fillStarters(starter, state.pendingDs);
+          drop.classList.remove("open");
+          return;
+        }
+        if (e.target.closest(".ds-drop-btn")) {
+          const wasOpen = drop.classList.contains("open");
+          node.closest("#message-list").querySelectorAll(".ds-drop.open").forEach((d) => d.classList.remove("open"));
+          drop.classList.toggle("open", !wasOpen);
+        }
       });
+      document.addEventListener("click", (e) => { if (!e.target.closest(".ds-drop")) node.closest("#message-list")?.querySelectorAll(".ds-drop.open").forEach((d) => d.classList.remove("open")); });
       el.appendChild(node);
       el.appendChild(starter);
+      // 默认即展示引导问题，不必先点知识库
+      starter.classList.remove("hidden");
+      fillStarters(starter, state.pendingDs);
     }
-    populateHomeRecent(el);
     return el;
   }
 
@@ -566,8 +588,16 @@
     inner += `</div>`;
     el.innerHTML = inner;
     const contentEl = $(".msg-content", el);
-    if (isUser) contentEl.textContent = m.content || "";
-    else applyMd(contentEl, m.content || "", (m.hits || []).length);
+    if (isUser) {
+      if (m.images && m.images.length) {
+        contentEl.innerHTML = `<div class="msg-imgs">${m.images.map((u) => `<img src="${esc(u)}">`).join("")}</div>`;
+      }
+      if (m.content) {
+        const p = document.createElement("div");
+        p.textContent = m.content;
+        contentEl.appendChild(p);
+      }
+    } else applyMd(contentEl, m.content || "", (m.hits || []).length);
     return el;
   }
 
@@ -801,7 +831,24 @@
   });
 
   // 首页快捷功能 + 最近使用
-  $("#btn-attach").addEventListener("click", () => { pendingHomeAction = "upload"; $("#home-file-input").click(); });
+  // 对话内随消息上传图片提问
+  state.pendingImages = [];
+  $("#btn-attach").addEventListener("click", () => { $("#chat-image-input").click(); });
+  $("#chat-image-input").addEventListener("change", () => {
+    const files = Array.from($("#chat-image-input").files || []);
+    files.forEach((f) => state.pendingImages.push({ file: f, url: URL.createObjectURL(f) }));
+    $("#chat-image-input").value = "";
+    renderImgPreview();
+  });
+  function renderImgPreview() {
+    const box = $("#img-preview");
+    box.classList.toggle("hidden", !state.pendingImages.length);
+    box.innerHTML = state.pendingImages.map((im, i) =>
+      `<div class="img-pv"><img src="${im.url}"><button type="button" class="img-pv-x" data-i="${i}">×</button></div>`).join("");
+    box.querySelectorAll(".img-pv-x").forEach((b) => b.addEventListener("click", () => {
+      state.pendingImages.splice(Number(b.dataset.i), 1); renderImgPreview();
+    }));
+  }
   $("#home-file-input").addEventListener("change", () => {
     uploadToMyKnowledge($("#home-file-input").files, pendingHomeAction === "summarize");
     $("#home-file-input").value = "";
@@ -865,7 +912,22 @@
 
     const list = $("#message-list");
     if ($(".empty-state", list)) list.innerHTML = "";
-    list.appendChild(renderMessage({ role: "user", content: q }));
+
+    // 上传待发图片，得到可访问 URL
+    let images = [];
+    if (state.pendingImages.length) {
+      try {
+        for (const im of state.pendingImages) {
+          const fd = new FormData();
+          fd.append("file", im.file);
+          const r = await fetch("/api/chats/upload-image", { method: "POST", body: fd, headers: { "X-CSRF-Token": state.csrf }, credentials: "same-origin" });
+          if (!r.ok) throw new Error("图片上传失败");
+          images.push((await r.json()).url);
+        }
+      } catch (err) { toast(err.message || "图片上传失败", true); return; }
+    }
+    list.appendChild(renderMessage({ role: "user", content: q, images }));
+    state.pendingImages = []; renderImgPreview();
 
     const ans = document.createElement("div");
     ans.className = "msg assistant";
@@ -883,6 +945,7 @@
 
     // N8：续聊不再传 dataset —— 后端按会话绑定库检索
     const payload = { session_id: state.current, question: q };
+    if (images.length) payload.images = images;
 
     try {
       const res = await fetch("/api/chats/ask", {
@@ -893,7 +956,7 @@
         credentials: "same-origin",   // Cookie 会话自动携带
       });
       if (!res.ok) {
-        if (res.status === 401) { logout(); return; }
+        if (res.status === 401 && state.username) { logout(); return; }
         const detail = (await res.json()).detail || "请求失败";
         contentEl.textContent = "请求失败：" + detail;
         toast(detail, true);
@@ -1008,7 +1071,8 @@
   }
   function scrollBottom(smooth) {
     const list = $("#message-list");
-    list.scrollTo({ top: list.scrollHeight, behavior: smooth ? "auto" : "smooth" });
+    if (smooth) list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+    else list.scrollTop = list.scrollHeight;   // 立即定位，不受 CSS scroll-behavior 影响
   }
 
   /* ---------- 知识库页面（参考 file-manager 布局） ---------- */
@@ -1196,6 +1260,7 @@
       if (newWrap) newWrap.classList.remove("hidden");
       fixed.classList.add("hidden");
       $("#ds-select").value = state.pendingDs == null ? DS_ALL : String(state.pendingDs);
+      syncCsLabel($("#ds-select"));
     } else {
       if (newWrap) newWrap.classList.add("hidden");
       fixed.classList.remove("hidden");
@@ -1558,7 +1623,7 @@
         if (xhr.status >= 200 && xhr.status < 300) { resolve(); return; }
         let detail = xhr.statusText;
         try { detail = JSON.parse(xhr.responseText).detail || detail; } catch (_) {}
-        if (xhr.status === 401) { logout(); reject(new Error("登录已失效")); }
+        if (xhr.status === 401 && state.username) { logout(); reject(new Error("登录已失效")); }
         else reject(new Error(detail));
       };
       xhr.onerror = () => reject(new Error("网络错误"));
@@ -2326,6 +2391,57 @@
   $("#cm-cancel").addEventListener("click", () => cmClose(false));
   $("#cm-ok").addEventListener("click", () => cmClose(true));
   $("#confirm-modal").addEventListener("click", (e) => { if (e.target === e.currentTarget) cmClose(false); });
+
+  /* ---------- 自定义下拉框：接管所有原生 <select>，保留隐藏 select 同步值 ---------- */
+  function enhanceSelect(sel) {
+    if (sel.dataset.cs === "1" || sel.tagName !== "SELECT") return;
+    sel.dataset.cs = "1";
+    sel.classList.add("cs-native");
+    const wrap = document.createElement("div");
+    wrap.className = "cs-select";
+    sel.parentNode.insertBefore(wrap, sel);
+    wrap.appendChild(sel);
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "cs-value";
+    const label = document.createElement("span"); label.className = "cs-label";
+    const chev = document.createElement("span"); chev.className = "cs-chev";
+    chev.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="m6 9 6 6 6-6"/></svg>';
+    btn.appendChild(label); btn.appendChild(chev);
+    const list = document.createElement("div"); list.className = "cs-list";
+    wrap.appendChild(btn); wrap.appendChild(list);
+
+    const sync = () => { label.textContent = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : ""; };
+    const open = () => {
+      list.innerHTML = [...sel.options].map((o, i) =>
+        `<div class="cs-opt${i === sel.selectedIndex ? " sel" : ""}" data-i="${i}">${o.textContent}</div>`).join("");
+      document.querySelectorAll(".cs-select.open").forEach((w) => { if (w !== wrap) w.classList.remove("open"); });
+      wrap.classList.add("open");
+    };
+    btn.addEventListener("click", (e) => { e.stopPropagation(); sync(); open(); });
+    list.addEventListener("click", (e) => {
+      const opt = e.target.closest(".cs-opt"); if (!opt) return;
+      sel.selectedIndex = +opt.dataset.i;
+      sync(); wrap.classList.remove("open");
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    sync();
+  }
+  /* 自定义下拉：程序修改原生 select 的值后，同步更新自定义标签 */
+  function syncCsLabel(sel) {
+    if (!sel) return;
+    const lab = sel.closest(".cs-select")?.querySelector(".cs-label");
+    if (lab && sel.options[sel.selectedIndex]) lab.textContent = sel.options[sel.selectedIndex].textContent;
+  }
+  document.addEventListener("click", () => document.querySelectorAll(".cs-select.open").forEach((w) => w.classList.remove("open")));
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") document.querySelectorAll(".cs-select.open").forEach((w) => w.classList.remove("open")); });
+  new MutationObserver((muts) => muts.forEach((m) => m.addedNodes.forEach((n) => {
+    if (n.nodeType !== 1) return;
+    if (n.matches && n.matches("select")) enhanceSelect(n);
+    (n.querySelectorAll ? [...n.querySelectorAll("select")] : []).forEach(enhanceSelect);
+  }))).observe(document.body, { childList: true, subtree: true });
+  document.querySelectorAll("select").forEach(enhanceSelect);
 
   /* ---------- 启动 ---------- */
   function boot() {

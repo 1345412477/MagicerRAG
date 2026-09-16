@@ -29,6 +29,7 @@ class AskIn(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
     top_k: int = 4
     dataset_ids: list[int] | None = None  # 要检索的数据集；None = 全部有权限的
+    images: list[str] | None = None  # 随消息附带的图片 URL（多模态提问）
 
 
 class ShareCreate(BaseModel):

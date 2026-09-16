@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MagicerRAG · 你的个人 AI 知识助手</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=6">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236d62f5' stroke-width='2'><path d='M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3z'/></svg>">
 </head>
 <body>
@@ -130,8 +130,10 @@
           </div>
         </div>
         <div class="composer-box">
-          <button id="btn-attach" class="icon-btn attach-btn" title="添加资料"><i data-lucide="paperclip"></i></button>
+          <button id="btn-attach" class="icon-btn attach-btn" title="上传图片提问"><i data-lucide="paperclip"></i></button>
           <input id="home-file-input" type="file" multiple accept=".md,.txt,.html,.doc,.docx,.pdf,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.bmp,.webp" class="hidden">
+          <input id="chat-image-input" type="file" multiple accept="image/*" class="hidden">
+          <div id="img-preview" class="img-preview hidden"></div>
           <textarea id="input" class="input" rows="1" placeholder="输入你的问题，回车发送（Shift+回车换行）"></textarea>
           <button id="btn-send" class="btn-send" title="发送" disabled><i data-lucide="send"></i></button>
         </div>
@@ -418,6 +420,6 @@
   <script src="/static/vendor/marked.min.js"></script>
   <script src="/static/vendor/purify.min.js"></script>
   <script src="/static/vendor/highlight.min.js"></script>
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=7"></script>
 </body>
 </html>
