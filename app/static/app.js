@@ -857,6 +857,17 @@
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   });
+  input.addEventListener("paste", (e) => {
+    const items = (e.clipboardData && e.clipboardData.items) || [];
+    const imgs = Array.from(items).filter((it) => it.type.startsWith("image/"));
+    if (!imgs.length) return;
+    e.preventDefault();
+    imgs.forEach((it) => {
+      const f = it.getAsFile();
+      if (f) state.pendingImages.push({ file: f, url: URL.createObjectURL(f) });
+    });
+    renderImgPreview();
+  });
 
   // 首页建议词：点击填入并直接发送
   document.addEventListener("click", (e) => {
