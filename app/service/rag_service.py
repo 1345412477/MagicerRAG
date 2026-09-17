@@ -32,7 +32,7 @@ def _abs_image_url(u: str) -> str:
     try:
         from pathlib import Path
         import base64, mimetypes
-        p = Path("app/static") / u.lstrip("/")
+        p = Path("static") / u.lstrip("/")
         if not p.exists():
             return u
         data = p.read_bytes()
