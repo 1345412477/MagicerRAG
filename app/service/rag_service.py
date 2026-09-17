@@ -17,6 +17,7 @@ _VISION_HINTS = (
     "glm-4v", "glm-4.5v", "glm-4v", "glm-vision",
     "gemini", "claude-3", "claude-4", "claude-3.5", "claude-3.7",
     "doubao-vision", "vision", "-vl", "image-to-text", "llava",
+    "deepseek-vl", "deepseek-v4", "deepseek-v3", "deepseek-r1",
 )
 
 def supports_vision(model: str | None) -> bool:
