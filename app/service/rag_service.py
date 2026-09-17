@@ -24,6 +24,23 @@ def supports_vision(model: str | None) -> bool:
     m = (model or "").lower()
     return any(h in m for h in _VISION_HINTS)
 
+
+def _abs_image_url(u: str) -> str:
+    """DeepSeek 等模型要求图片为 data URI 或公网可访问 URL；相对路径转 base64。"""
+    if u.startswith("data:") or u.startswith("http"):
+        return u
+    try:
+        from pathlib import Path
+        import base64, mimetypes
+        p = Path("app/static") / u.lstrip("/")
+        if not p.exists():
+            return u
+        data = p.read_bytes()
+        mime = mimetypes.guess_type(str(p))[0] or "image/png"
+        return f"data:{mime};base64,{base64.b64encode(data).decode()}"
+    except Exception:
+        return u
+
 # AsyncOpenAI 客户端按 base_url 缓存复用（同一地址不重复建连接池）；
 # model/temperature 在请求时传入，故切换模型即时生效，仅更换地址才新建 client。
 _ahttp_clients: dict[str, AsyncOpenAI] = {}
@@ -171,7 +188,7 @@ def build_messages(
     if images:
         parts: list[dict] = [{"type": "text", "text": user_msg}]
         for u in images[:4]:
-            parts.append({"type": "image_url", "image_url": {"url": u}})
+            parts.append({"type": "image_url", "image_url": {"url": _abs_image_url(u)}})
         msgs.append({"role": "user", "content": parts})
     else:
         msgs.append({"role": "user", "content": user_msg})
