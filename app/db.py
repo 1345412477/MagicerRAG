@@ -166,6 +166,8 @@ def _migrate(conn: sqlite3.Connection):
     mcol = {r["name"] for r in conn.execute("PRAGMA table_info(messages)")}
     if "reasoning" not in mcol:
         conn.execute("ALTER TABLE messages ADD COLUMN reasoning TEXT")
+    if "images" not in mcol:
+        conn.execute("ALTER TABLE messages ADD COLUMN images TEXT")
 
 
 @contextmanager
@@ -450,16 +452,17 @@ def delete_session(session_id: int, user_id: int) -> int:
 
 
 # ---------- 消息 ----------
-def add_message(session_id: int, role: str, content: str, hits: list | None = None, reasoning: str | None = None) -> int:
+def add_message(session_id: int, role: str, content: str, hits: list | None = None, reasoning: str | None = None, images: list | None = None) -> int:
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO messages (session_id, role, content, hits, reasoning, created_at) VALUES (?,?,?,?,?,?)",
+            "INSERT INTO messages (session_id, role, content, hits, reasoning, images, created_at) VALUES (?,?,?,?,?,?,?)",
             (
                 session_id,
                 role,
                 content,
                 json.dumps(hits, ensure_ascii=False) if hits else None,
                 reasoning,
+                json.dumps(images, ensure_ascii=False) if images else None,
                 utcnow(),
             ),
         )
@@ -480,6 +483,7 @@ def list_messages(session_id: int) -> list[dict]:
                 "content": r["content"],
                 "hits": json.loads(r["hits"]) if r["hits"] else None,
                 "reasoning": r["reasoning"] if "reasoning" in r.keys() else None,
+                "images": json.loads(r["images"]) if "images" in r.keys() and r["images"] else None,
             }
         )
     return out

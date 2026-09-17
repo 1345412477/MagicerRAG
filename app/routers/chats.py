@@ -152,7 +152,7 @@ async def ask(body: AskIn, user: dict = Depends(get_current_user)):
     retrieval_question = rag_service.rewrite_question(body.question, history if rt["query_rewrite"] else None)
 
     # 保存用户消息
-    db.add_message(sid, "user", body.question)
+    db.add_message(sid, "user", body.question, images=body.images)
 
     async def event_stream():
         # 当前模型不支持看图时，直接回提示，避免多模态请求报错
