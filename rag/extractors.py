@@ -295,10 +295,35 @@ def _read_ole_legacy(path: Path, streams: list[str] | None = None) -> str:
 
 
 def _read_doc_legacy(path: Path) -> str:
-    """老式 Word (.doc)：优先 antiword 精确提取；失败回退 OLE 流启发式。"""
+    """老式 Word (.doc)：优先 libreoffice 转 .docx 以保留图片，再 antiword/OLE 兜底。"""
     import shutil
     import subprocess
+    import tempfile
 
+    # 1) libreoffice 转 docx，既能取正文又能拿到内嵌图片
+    soffice = shutil.which("soffice") or shutil.which("libreoffice")
+    if soffice:
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                r = subprocess.run(
+                    [soffice, "--headless", "--convert-to", "docx",
+                     "--outdir", td, str(path)],
+                    capture_output=True, timeout=120,
+                )
+                docx_path = Path(td) / (path.stem + ".docx")
+                if r.returncode == 0 and docx_path.exists():
+                    parts = [_read_docx(docx_path)]
+                    # 从转出来的 docx 中抽图片并 OCR
+                    imgs = _extract_images_from_docx(docx_path)
+                    for i, img_path in enumerate(imgs[:20], 1):
+                        t = _read_image_ocr(img_path)
+                        if t.strip():
+                            parts.append(f"[图 {i} 内容]\n{t.strip()}")
+                    return "\n".join(p for p in parts if p.strip())
+        except Exception:  # noqa: BLE001
+            pass
+
+    # 2) antiword 兜底
     antiword = shutil.which("antiword")
     if antiword:
         try:
@@ -317,12 +342,27 @@ def _read_doc_legacy(path: Path) -> str:
     t = _read_ole_legacy(path, streams=["WordDocument"])
     if len(t) < 10:
         t = _read_ole_legacy(path)
-    # 截掉 Word 域/格式尾噪声：正文通常在 PAGE · \\* MERGEFORMAT 域标记前结束，
-    # 该标记后的字节多为错位排版码，直接裁掉保留可读主体。
     marker = _doc_body_end_marker(t)
     if marker > 0:
         t = t[:marker]
     return _strip_word_page_residue(t)
+
+
+def _extract_images_from_docx(docx_path: Path) -> list[Path]:
+    """从 .docx 中抽出内嵌图片到临时目录，返回路径列表。"""
+    import zipfile
+    import tempfile
+    out = []
+    try:
+        with zipfile.ZipFile(str(docx_path)) as z:
+            for name in z.namelist():
+                if name.startswith("word/media/"):
+                    tmp = Path(tempfile.mkdtemp()) / Path(name).name
+                    tmp.write_bytes(z.read(name))
+                    out.append(tmp)
+    except Exception:  # noqa: BLE001
+        pass
+    return out
 
 
 def _strip_word_page_residue(text: str) -> str:

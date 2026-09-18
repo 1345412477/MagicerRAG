@@ -20,8 +20,10 @@ ENV PYTHONUNBUFFERED=1 \
 
 # OCR 依赖：tesseract + 中文语言包 + 运行时共享库（chromadb 需要 libgomp1）
 # antiword：老式 .doc 文本提取
+# libreoffice：.doc/.ppt 转 .docx/.pptx 以提取内嵌图片
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        tesseract-ocr tesseract-ocr-chi-sim libgomp1 antiword && \
+        tesseract-ocr tesseract-ocr-chi-sim libgomp1 antiword \
+        libreoffice --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
 # 拷贝 venv 与应用代码
