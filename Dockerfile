@@ -19,8 +19,9 @@ ENV PYTHONUNBUFFERED=1 \
     PATH=/venv/bin:$PATH
 
 # OCR 依赖：tesseract + 中文语言包 + 运行时共享库（chromadb 需要 libgomp1）
+# antiword：老式 .doc 文本提取
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        tesseract-ocr tesseract-ocr-chi-sim libgomp1 && \
+        tesseract-ocr tesseract-ocr-chi-sim libgomp1 antiword && \
     rm -rf /var/lib/apt/lists/*
 
 # 拷贝 venv 与应用代码

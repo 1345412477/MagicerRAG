@@ -32,7 +32,12 @@ def _abs_image_url(u: str) -> str:
     try:
         from pathlib import Path
         import base64, mimetypes
-        p = Path("static") / u.lstrip("/")
+        # STATIC_DIR 等价于 app/static，与 main.py 挂载目录一致
+        static_dir = Path(__file__).resolve().parent.parent / "static"
+        rel = u.lstrip("/")
+        if rel.startswith("static/"):
+            rel = rel[len("static/"):]
+        p = static_dir / rel
         if not p.exists():
             return u
         data = p.read_bytes()

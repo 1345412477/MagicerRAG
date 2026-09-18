@@ -295,7 +295,25 @@ def _read_ole_legacy(path: Path, streams: list[str] | None = None) -> str:
 
 
 def _read_doc_legacy(path: Path) -> str:
-    """老式 Word (.doc)：正文主要在 WordDocument 流；回退全流。"""
+    """老式 Word (.doc)：优先 antiword 精确提取；失败回退 OLE 流启发式。"""
+    import shutil
+    import subprocess
+
+    antiword = shutil.which("antiword")
+    if antiword:
+        try:
+            r = subprocess.run(
+                [antiword, str(path)], capture_output=True, timeout=60
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                for enc in ("utf-8", "cp1252", "latin-1"):
+                    try:
+                        return r.stdout.decode(enc)
+                    except UnicodeDecodeError:
+                        continue
+                return r.stdout.decode("utf-8", errors="replace")
+        except Exception:  # noqa: BLE001
+            pass
     t = _read_ole_legacy(path, streams=["WordDocument"])
     if len(t) < 10:
         t = _read_ole_legacy(path)
