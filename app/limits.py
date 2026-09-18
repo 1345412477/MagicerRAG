@@ -22,6 +22,8 @@ class _Rule:
 #   generate : 调用大模型生成，限制并发控成本
 #   generic  : 其余 /api 接口的兜底
 _RULES: dict[str, _Rule] = {
+    # 认证相关（登录/注册等未认证敏感操作）：独立限流防暴破与撞库
+    "/api/auth/": _Rule(10, 60),
     # 仅对真正触发大模型生成的 /api/chats/ask 限流；其余会话浏览类接口走通用兜底
     "/api/chats/ask": _Rule(20, 60),
 }
@@ -64,24 +66,28 @@ def _pick_rule(path: str) -> tuple[str, _Rule] | None:
     return None
 
 
-def _client_ip(scope: dict) -> str:
-    """解析客户端 IP：优先取受信任反代注入的 X-Forwarded-For 首跳，否则回落 socket peer。
+def _client_ip(scope: dict, trust_proxy: bool = False) -> str:
+    """解析客户端 IP。
 
-    直接部署（无反代）时不存在该头，落到真实 peer；经 Nginx/Caddy 反代时取
-    转发头最左（原始客户端）IP，避免所有请求都命中代理 IP 导致限流失真。
+    trust_proxy=False（默认，直连部署）：只信任 socket peer，不读任何可伪造的转发头，
+    防止攻击者用 X-Forwarded-For 伪造 IP 绕过限流。
+    trust_proxy=True（仅用于可信反代之后）：取 X-Forwarded-For 最左（原始客户端）IP，
+    避免所有请求都命中代理 IP 导致限流失真。调用方须保证反代会覆盖/剥离客户端伪造值。
     """
-    for k, v in scope.get("headers", []):
-        if k == b"x-forwarded-for":
-            first = v.decode("latin-1").split(",")[0].strip()
-            if first:
-                return first
+    if trust_proxy:
+        for k, v in scope.get("headers", []):
+            if k == b"x-forwarded-for":
+                first = v.decode("latin-1").split(",")[0].strip()
+                if first:
+                    return first
     client = scope.get("client")
     return client[0] if client else "unknown"
 
 
 class RateLimitMiddleware:
-    def __init__(self, app):
+    def __init__(self, app, trust_proxy: bool = False):
         self.app = app
+        self.trust_proxy = trust_proxy
         self._counter = _Counter()
 
     async def __call__(self, scope, receive, send):
@@ -93,7 +99,7 @@ class RateLimitMiddleware:
         picked = _pick_rule(path)
         if picked:
             prefix, rule = picked
-            ip = _client_ip(scope)
+            ip = _client_ip(scope, self.trust_proxy)
             if not self._counter.allow(f"{ip}:{prefix}", rule.limit, rule.window):
                 body = '{"detail":"请求过于频繁，请稍后再试"}'.encode("utf-8")
                 await send({

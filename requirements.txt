@@ -1,27 +1,35 @@
-# RAG 骨架依赖
-python-dotenv>=1.0.0
-langchain>=0.3.0
-langchain-community>=0.3.0
-langchain-openai>=0.3.0
-langchain-text-splitters>=0.3.0
-langchain-chroma>=0.3.0
-chromadb>=0.5.0
+# MagicerRAG 运行时依赖（精确锁定，保证服务器部署可复现；升级请走"定版+回归"小节分批做）
+# 注：面板/服务器冷启动 clone 后应能按此精确安装；langchain-community 与顶层 langchain 未被代码引用，已移除。
+
+# RAG 检索与向量（仅保留代码实际导入的 langchain 命名空间包）
+langchain-core==1.6.1
+langchain-text-splitters==1.1.2
+langchain-chroma==1.1.0
+langchain-openai==1.6.0
+chromadb==1.5.9
+openai==3.7.0
+numpy==2.2.6
 
 # Web 工作台
-fastapi>=0.110.0
-uvicorn[standard]>=0.29.0
-python-multipart>=0.0.9
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+python-multipart==0.0.32
+python-dotenv==1.2.2
+pydantic==2.13.5
+
+# 密钥加密
+cryptography==46.0.7
 
 # 多格式文档/图片文本提取（Word/PDF/Excel/PPT/图片OCR）
-python-docx>=1.1.0
-pdfplumber>=0.11.0
-pypdf>=3.0.0
-openpyxl>=3.1.0
-python-pptx>=0.6.23
-pytesseract>=0.3.10
-Pillow>=10.0.0
-olefile>=0.47
-xlrd>=2.0.1
+python-docx==1.2.0
+pdfplumber==0.11.9
+pypdf==3.17.4
+openpyxl==3.1.5
+python-pptx==1.0.2
+pytesseract==0.3.13
+Pillow==12.2.0
+olefile==0.47
+xlrd==2.0.2
 
 # 可选：离线向量索引（不用 Chroma 时可换用）
-# faiss-cpu>=1.8.0
+# faiss-cpu==1.8.0

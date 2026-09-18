@@ -58,6 +58,10 @@ LONG_DOC_CHARS = int(os.getenv("LONG_DOC_CHARS", "20000"))
 # ---- 网页工作台（服务端）配置 ----
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
+# 是否信任反代注入的 X-Forwarded-For 头（限流用客户端 IP 解析）。
+# 直连部署（无 Nginx/Caddy）必须保持 0，否则攻击者可伪造该头绕过限流；
+# 置 1 仅用于「确定处于可信反代之后」的部署，且要求反代覆盖/剥离客户端伪造值。
+TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "0").lower() in {"1", "true", "yes", "on"}
 # 邀请码：成员注册时需填写（F6）
 INVITE_CODE = os.getenv("INVITE_CODE", "magicer-demo")
 # 超级管理员用户名（该账号自动提权、免邀请码，user 管理知识库全权限）

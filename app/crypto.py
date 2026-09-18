@@ -16,6 +16,23 @@ _fernet: Fernet | None = None
 _PREFIX = "gAAAAA"  # Fernet token 固定前缀，用于识别密文
 
 
+def key_source() -> str:
+    """当前加密密钥材料来源：
+    explicit=显式 SECRET_KEY（推荐）｜embedding=回退用 EMBEDDING_API_KEY｜hardcoded=内置兜底（不安全）。
+    """
+    from config import EMBEDDING_API_KEY as _eak, SECRET_KEY as _sk
+
+    if _sk:
+        return "explicit"
+    if _eak:
+        return "embedding"
+    return "hardcoded"
+
+
+def key_is_secure() -> bool:
+    return key_source() == "explicit"
+
+
 def _derive_key() -> bytes:
     material = SECRET_KEY or EMBEDDING_API_KEY or "magicerrag-insecure-default"
     return base64.urlsafe_b64encode(hashlib.sha256(material.encode()).digest())

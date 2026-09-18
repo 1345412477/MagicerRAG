@@ -13,20 +13,28 @@ import logging
 import re
 import uuid
 
-from config import PORT
+from config import PORT, TRUST_PROXY_HEADERS
+from . import crypto, sharepage
 from .deps import CSRF_COOKIE, SESSION_COOKIE
 from .limits import RateLimitMiddleware
 from .routers import admin, auth, chats, kb
-from . import sharepage
 
 logger = logging.getLogger("magicerrag")
+
+if not crypto.key_is_secure():
+    logger.warning(
+        "SECRET_KEY 未显式配置（当前加密密钥源=%s）。生产环境请设置独立高熵 SECRET_KEY，"
+        "否则落库的模型 API Key 加密强度取决于 EMBEDDING_API_KEY/内置兜底值。",
+        crypto.key_source(),
+    )
 
 STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="MagicerRAG", version="1.0.0")
 
-# 限流需最先拦截，避免未认证请求消耗后续依赖校验逻辑
-app.add_middleware(RateLimitMiddleware)
+# 限流需最先拦截，避免未认证请求消耗后续依赖校验逻辑；
+# trust_proxy 仅在确定处于可信反代之后时置 1，否则直连部署将信任可伪造的转发头。
+app.add_middleware(RateLimitMiddleware, trust_proxy=TRUST_PROXY_HEADERS)
 
 
 @app.middleware("http")
@@ -54,6 +62,18 @@ async def security_and_trace(request: Request, call_next):
     response.headers.setdefault("Referrer-Policy", "same-origin")
     response.headers.setdefault(
         "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
+    )
+    # 纵深防御：XSS 第一道防线是 DOMPurify，CSP 作为兜底。
+    # script-src 不含 'unsafe-inline'（前端无内联脚本/处理器），可阻断注入脚本执行；
+    # style-src 保留 unsafe-inline 以兼容 markdown 内联样式；img 放行 https 以支持文档外部图片。
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "script-src 'self' https://unpkg.com; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob: https:; "
+        "connect-src 'self'; object-src 'none'; base-uri 'self'; "
+        "frame-ancestors 'none'; form-action 'self'",
     )
     response.headers.setdefault("X-Request-ID", request_id)
     return response
