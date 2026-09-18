@@ -186,7 +186,15 @@ def build_messages(
         total_budget = history_budget * 2
     cap = max(0, min(history_budget, total_budget - overhead))
 
-    msgs: list[dict] = [{"role": "system", "content": _SERVICE_SYSTEM}]
+    sys_prompt = _SERVICE_SYSTEM
+    if images:
+        sys_prompt += (
+            "\n\n用户随消息附带了图片，请先直接观察图片内容并回答与图片相关的问题；"
+            "若问题明显是关于图片本身（如描述图中内容、识别图中文字），请直接描述图片，"
+            "不要强行关联下方知识库资料，也不要反复声明“资料中没有相关信息”。"
+            "仅当用户问题确实需要结合知识库文本时才引用资料。"
+        )
+    msgs: list[dict] = [{"role": "system", "content": sys_prompt}]
     if history:
         for m in _fit_history(history, cap):
             msgs.append({"role": m["role"], "content": m["content"]})
