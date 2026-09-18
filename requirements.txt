@@ -20,6 +20,8 @@ openpyxl>=3.1.0
 python-pptx>=0.6.23
 pytesseract>=0.3.10
 Pillow>=10.0.0
+olefile>=0.47
+xlrd>=2.0.1
 
 # 可选：离线向量索引（不用 Chroma 时可换用）
 # faiss-cpu>=1.8.0
